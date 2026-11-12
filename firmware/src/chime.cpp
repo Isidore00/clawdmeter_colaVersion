@@ -57,7 +57,14 @@ static float    pcm_gain   = -1.0f;     // gain `pcm` was rendered at
 static volatile bool render_started = false;
 static volatile bool rendering = false;  // the background render is running
 static volatile bool pending   = false;  // play when the render finishes
-static portMUX_TYPE  state_lock = portMUX_INITIALIZER_UNLOCKED;  // rendering, pending, playing
+static portMUX_TYPE  state_lock = portMUX_INITIALIZER_UNLOCKED;  // rendering, pending, playing, clip_*
+
+// A clip (chime_play_clip): someone else's PCM, played when no ding is.
+static const int16_t* clip_pcm    = nullptr;
+static uint32_t       clip_frames = 0;
+static uint32_t       clip_repeat = 1;      // output frames per clip sample
+static volatile bool  clip_active = false;  // the task holding `playing` is a clip
+static volatile bool  ding_wanted = false;  // a ding was asked for during a clip
 
 static bool es8311_setup(void) {
     es = es8311_create(0, cfg.es8311_addr);   // I2C port 0 (shared Wire bus)
@@ -198,9 +205,88 @@ static void chime_task(void* arg) {
     vTaskDelete(nullptr);
 }
 
+// A little silence, then let the whole DMA queue play out.
+static void drain(void) {
+    memset(chunk, 0, sizeof(chunk));
+    i2s.write((uint8_t*)chunk, sizeof(chunk));
+    delay(I2S_DMA_FRAMES * 1000 / cfg.sample_rate + 5);
+}
+
+// The clip, each sample repeated up to the I2S rate; stops when a ding is
+// asked for.
+static void stream_clip(void) {
+    uint32_t k = 0;
+    for (uint32_t n = 0; n < clip_frames && !ding_wanted; n++) {
+        for (uint32_t r = 0; r < clip_repeat; r++) {
+            chunk[2 * k] = clip_pcm[n];
+            chunk[2 * k + 1] = clip_pcm[n];
+            if (++k == CHUNK_FRAMES) {
+                i2s.write((uint8_t*)chunk, k * 2 * sizeof(int16_t));
+                k = 0;
+            }
+        }
+    }
+    if (k) i2s.write((uint8_t*)chunk, k * 2 * sizeof(int16_t));
+}
+
+static void clip_task(void* arg) {
+    output_on(true);
+    delay(8);
+    stream_clip();
+    for (;;) {
+        drain();
+        output_on(false);
+        // A ding asked for meanwhile plays now, from this task (it holds
+        // `playing`); with none, the speaker is free again.
+        portENTER_CRITICAL(&state_lock);
+        const bool ding = ding_wanted;
+        ding_wanted = false;
+        if (!ding) {
+            clip_active = false;
+            playing = false;
+        }
+        portEXIT_CRITICAL(&state_lock);
+        if (!ding) break;
+        output_on(true);
+        delay(8);
+        if (pcm) stream_buffer();
+#if SOC_CPU_HAS_FPU
+        else stream_live();
+#endif
+    }
+    vTaskDelete(nullptr);
+}
+
+bool chime_play_clip(const int16_t* data, uint32_t frames, uint32_t rate) {
+    if (!ready || !data || !frames || !rate) return false;
+    portENTER_CRITICAL(&state_lock);
+    const bool busy = playing || pending || rendering || !render_started;
+    if (!busy) {
+        playing = true;
+        clip_active = true;
+        ding_wanted = false;
+    }
+    portEXIT_CRITICAL(&state_lock);
+    if (busy) return false;
+    clip_pcm = data;
+    clip_frames = frames;
+    clip_repeat = ((uint32_t)cfg.sample_rate + rate / 2) / rate;
+    if (clip_repeat < 1) clip_repeat = 1;
+    if (xTaskCreatePinnedToCore(clip_task, "chime-clip", 4096, nullptr, CHIME_TASK_PRIORITY, nullptr,
+                                CHIME_TASK_CORE) != pdPASS) {
+        portENTER_CRITICAL(&state_lock);
+        clip_active = false;
+        playing = false;
+        portEXIT_CRITICAL(&state_lock);
+        return false;
+    }
+    return true;
+}
+
 static void start_playback(void) {
     portENTER_CRITICAL(&state_lock);
     const bool busy = playing;
+    if (busy && clip_active) ding_wanted = true;   // the ding outranks a clip: it cuts in
     playing = true;
     portEXIT_CRITICAL(&state_lock);
     if (busy) return;

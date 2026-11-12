@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "performer.h"
 #include "mascot.h"
+#include "cola.h"
 #include "clawd_anim.h"
 #include "clawd_policy.h"
 #include "minimal_mode.h"
@@ -542,6 +543,11 @@ void ui_init(void) {
     } else {
         themed_icon(battery_img, TH_TEXT);   // white by default; readable on a light theme
     }
+
+    // The cola layer (cola.h; a no-op unless the env builds it), in the lower
+    // right corner of the second card. Created before Clawd, so every Clawd
+    // sprite draws in front of it.
+    cola_create(scr, L.card[1].x + L.card[1].w, L.card[1].y + L.card[1].h);
 
     // Corner mascot in the old logo slot. The still Clawd is shorter than the
     // 80/40 px slot the spark logo used; center it vertically in that slot.

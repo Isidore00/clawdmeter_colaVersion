@@ -30,6 +30,13 @@ bool chime_init(const ChimeConfig& cfg);
 // before the render is done, it plays when the render finishes.
 void chime_play(void);
 
+// Play a clip of 16-bit mono PCM (non-blocking; `pcm` must stay valid, e.g.
+// const data in flash). `rate` should divide the I2S rate: each sample is
+// repeated to reach it. The ding outranks a clip: false (nothing played) while
+// a ding or another clip is playing, waiting or still rendering, and a ding
+// asked for during a clip cuts the clip off and plays.
+bool chime_play_clip(const int16_t* pcm, uint32_t frames, uint32_t rate);
+
 // Call every loop: the first call starts the background render.
 void chime_tick(void);
 

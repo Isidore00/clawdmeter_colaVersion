@@ -30,5 +30,8 @@ void sound_hal_init(void) {
 void sound_hal_chime(void) { chime_play(); }
 void sound_hal_tune(float gain, int volume) { chime_tune(gain, volume); }
 void sound_hal_tick(void)       { chime_tick(); }
+bool sound_hal_clip(const int16_t* pcm, uint32_t frames, uint32_t rate) {
+    return chime_play_clip(pcm, frames, rate);
+}
 
 #endif  // BOARD_HAS_SOUND

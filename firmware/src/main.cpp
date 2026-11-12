@@ -10,6 +10,7 @@
 #include "ble.h"
 #include "performer.h"
 #include "mascot.h"
+#include "cola.h"
 #include "clawd_director.h"
 #include "usage_rate.h"
 #include "signals.h"
@@ -246,6 +247,11 @@ static void check_serial_cmd() {
                 const bool ok = director_debug(cmd_buf + 6);
                 Serial.printf("{\"clawd\":\"%s\",\"ok\":%s}\n", cmd_buf + 6, ok ? "true" : "false");
             }
+            else if (strncmp(cmd_buf, "cola ", 5) == 0) {
+                // QA: `cola <state>` holds a cola layer state, `cola auto` lets go.
+                const bool ok = cola_debug(cmd_buf + 5);
+                Serial.printf("{\"cola\":\"%s\",\"ok\":%s}\n", cmd_buf + 5, ok ? "true" : "false");
+            }
             cmd_pos = 0;
         } else if (cmd_pos < CMD_BUF_SIZE - 1) {
             cmd_buf[cmd_pos++] = c;
@@ -471,6 +477,7 @@ void loop() {
     sound_hal_tick();
     performer_tick();
     mascot_tick();
+    cola_tick();
     director_tick();
     if (director_take_dismissed()) ble_send_dismiss();
     // Rotation transition (blank + ramp) would fight the idle fade — skip
@@ -622,6 +629,7 @@ void loop() {
                 director_alert(usage.alert_msg);
             }
             if (usage.alert_clear) director_alert_clear();
+            cola_on_payload(&usage, &sig);   // after the ding above: it goes first
             if (g_after != g_before)
                 Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
                     g_before, g_after, usage.session_pct);
