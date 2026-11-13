@@ -12,11 +12,18 @@
 #include <string.h>
 #include <esp_heap_caps.h>
 
-// Her spoken clips on this page. Off, as on the usage page: the room has no
-// audio yet. With -DCOLA_VOICE=1 voice_hook() is where a clip for the act
-// that just began would be asked for (cola.cpp: want_clip / sound_hal_clip).
-#ifndef COLA_VOICE
-#define COLA_VOICE 0
+// Her spoken lines on this page (room_voice_assets.h: 9 clips, IMA ADPCM,
+// 16 kHz, about 100 KB of flash). Only here: the usage page stays quiet. Its
+// own switch, apart from COLA_VOICE (the usage layer's clips): the
+// waveshare_amoled_216 env sets -DROOM_VOICE=1; without it nothing is
+// compiled in and say() does nothing.
+#ifndef ROOM_VOICE
+#define ROOM_VOICE 0
+#endif
+#if ROOM_VOICE
+#include "room_voice_assets.h"
+#include "hal/sound_hal.h"
+static_assert(ROOM_VOICE_N == RV_COUNT, "room_voice_assets.h and RoomVoice drifted");
 #endif
 
 // Where her feet are on the rug (room pixels, 480x480).
@@ -35,6 +42,11 @@
 // A tap (poke): barely moved.
 #define TAP_MAX_MOVE   25
 #define TAP_MAX_MS     600
+// A head pat: pressed and held this long, finger moved at most this far, on
+// the top part of her (a share of her height).
+#define PAT_HOLD_MS    600
+#define PAT_MAX_MOVE   20
+#define PAT_HEAD_PCT   30
 
 static lv_obj_t* root = NULL;
 static lv_obj_t* bg_img = NULL;
@@ -70,11 +82,18 @@ static int       tone_override = -1;         // `room day|dusk|night`, -1 = from
 
 static int       forced = -1;                // `room <act>`
 static bool      poke_pending = false;
-static int       poke_kind = -1;
+static int       poke_kind = -1;             // a reaction RoomAct (RA_PAT too), or -1: by the poke count
+static PokeCount pokes = {};
+static bool      night_said = false;         // the night line has been spoken for this stretch of night
+static long      morning_day = -1;           // the day the morning line was spoken
 
 // Touch tracking (see the indev callback)
 static lv_point_t press_pt;
 static uint32_t   press_ms = 0;
+static lv_indev_t* press_dev = NULL;
+static bool       pressing = false;
+static bool       hold_dead = false;         // moved too far, or already decided: no pat from this press
+static bool       hold_fired = false;        // this press made a pat: its release is nothing else
 
 // Where her feet are for an act (room pixels).
 static void feet_for(RoomAct a, int* x, int* y) {
@@ -102,10 +121,9 @@ static void apply_burnin(RoomTone tone, bool clock_known) {
     idle_set_sleep_on_usb(tone == TONE_NIGHT);
 }
 
-static void voice_hook(RoomAct a) {
-    (void)a;
-#if COLA_VOICE
-    // No room clips yet: ask for one here when there are.
+static void sound_stop_voice(void) {
+#if ROOM_VOICE
+    sound_hal_voice_stop();
 #endif
 }
 
@@ -115,6 +133,35 @@ static RoomTone current_tone(void) {
     if (!have_clock) return TONE_DAY;
     const long now_s = clock_epoch + (long)((uint32_t)(millis() - clock_ms) / 1000);
     return room_tone_for_minute((int)((now_s % 86400) / 60));
+}
+
+// Speaks a line, cutting off one that is playing; nothing while the page is
+// down, and nothing if the ding has the speaker. True if it started.
+static bool say(RoomVoice v) {
+#if ROOM_VOICE
+    if (!visible || (unsigned)v >= RV_COUNT) return false;
+    return sound_hal_voice(room_voices[v].adpcm, room_voices[v].samples, room_voices[v].rate);
+#else
+    (void)v;
+    return false;
+#endif
+}
+
+// The clock's local time: seconds since the epoch the app sent, moved on.
+static long clock_now_s(void) {
+    return clock_epoch + (long)((uint32_t)(millis() - clock_ms) / 1000);
+}
+
+// What she says when an act begins (a poke's line is spoken with the poke).
+static void on_act(RoomAct a) {
+    switch (a) {
+    case RA_SNACK: say(RV_SNACK); break;
+    case RA_DRINK: if (random(3) == 0) say(RV_DRINK); break;
+    case RA_SLEEP:
+        if (!night_said) { night_said = true; say(RV_NIGHT); }
+        break;
+    default: break;
+    }
 }
 
 // ---- drawing -------------------------------------------------------------
@@ -190,6 +237,7 @@ static const room_pose_t* pose_for(RoomAct a, uint8_t frame) {
     case RA_SHY:      return &room_pose_shy[frame % 2];
     case RA_ANGRY:    return &room_pose_angry[frame % 2];
     case RA_SNACK:    return &room_pose_snack[frame % 3];
+    case RA_PAT:      return &room_pose_pat[frame % 2];
     default:          return NULL;
     }
 }
@@ -260,8 +308,23 @@ static void show(bool on) {
         shift_at = millis();
         apply_shift();
         apply_burnin(current_tone(), have_clock || tone_override >= 0);
+        pressing = hold_dead = hold_fired = false;
         refresh(current_tone());
+        // Coming in: the morning line, once a day, and the night line at night.
+        if (have_clock) {
+            const long now_s = clock_now_s();
+            if (room_is_morning((int)((now_s % 86400) / 60)) && now_s / 86400 != morning_day) {
+                morning_day = now_s / 86400;
+                say(RV_MORNING);
+            }
+        }
+        if (current_tone() == TONE_NIGHT && !night_said) {
+            night_said = true;
+            say(RV_NIGHT);
+        }
     } else {
+        sound_stop_voice();
+        night_said = false;
         visible = false;
         lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);
         idle_set_awake_scale(100);          // the meters keep the user's brightness
@@ -271,8 +334,8 @@ static void show(bool on) {
     Serial.printf("{\"room\":\"%s\"}\n", on ? "on" : "off");
 }
 
-// Her hit box: the sprite, or the scene's patch while she's part of it.
-static bool hit(int x, int y) {
+// Her box: the sprite, or the scene's patch while she's part of it.
+static void her_box(int* ox0, int* oy0, int* ox1, int* oy1) {
     int x0, y0, x1, y1;
     const room_patch_t* p = room_act_is_scene(brain.act) ? patch_for(&brain) : NULL;
     if (p) {
@@ -284,11 +347,25 @@ static bool hit(int x, int y) {
         y0 = off_y + shift_y + fy - ROOM_POSE_GROUND;
         x1 = x0 + ROOM_POSE_W; y1 = y0 + ROOM_POSE_H;
     }
+    *ox0 = x0; *oy0 = y0; *ox1 = x1; *oy1 = y1;
+}
+
+static bool hit(int x, int y) {
+    int x0, y0, x1, y1;
+    her_box(&x0, &y0, &x1, &y1);
     return x >= x0 && x < x1 && y >= y0 && y < y1;
 }
 
+// The top part of her box: her head.
+static bool head_hit(int x, int y) {
+    int x0, y0, x1, y1;
+    her_box(&x0, &y0, &x1, &y1);
+    return x >= x0 && x < x1 && y >= y0 && y < y0 + (y1 - y0) * PAT_HEAD_PCT / 100;
+}
+
 // One callback on the touch device. A press records where and when; the
-// release says what it was: a swipe (page change) or a tap (a poke).
+// release says what it was: a swipe (page change) or a tap (a poke). A press
+// held on her head turns into a pat before it is released (held_pat).
 static void indev_cb(lv_event_t* e) {
     lv_indev_t* dev = (lv_indev_t*)lv_event_get_target(e);
     lv_point_t p = { 0, 0 };
@@ -297,6 +374,14 @@ static void indev_cb(lv_event_t* e) {
     if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
         press_pt = p;
         press_ms = now;
+        press_dev = dev;
+        pressing = true;
+        hold_dead = hold_fired = false;
+        return;
+    }
+    pressing = false;
+    if (hold_fired) {                  // it was a pat: not a swipe or a tap too
+        hold_fired = false;
         return;
     }
     if (!root || idle_is_asleep()) return;
@@ -354,6 +439,26 @@ void room_on_payload(const UsageData* d) {
 
 bool room_visible(void) { return visible; }
 
+// A press held on her head for PAT_HOLD_MS without moving more than
+// PAT_MAX_MOVE px is a pat. Decided once, when the time is up; a finger that
+// strays before then (a swipe) rules it out.
+static void held_pat(uint32_t now) {
+    if (!pressing || hold_dead || !press_dev) return;
+    lv_point_t p = press_pt;
+    lv_indev_get_point(press_dev, &p);
+    if (abs(p.x - press_pt.x) > PAT_MAX_MOVE || abs(p.y - press_pt.y) > PAT_MAX_MOVE) {
+        hold_dead = true;
+        return;
+    }
+    if ((uint32_t)(now - press_ms) < PAT_HOLD_MS) return;
+    hold_dead = true;
+    if (head_hit(press_pt.x, press_pt.y) && brain.act != RA_PAT) {
+        hold_fired = true;
+        poke_pending = true;
+        poke_kind = RA_PAT;
+    }
+}
+
 void room_tick(void) {
     if (!root || !visible || idle_is_asleep()) return;
     const RoomTone tone = current_tone();
@@ -361,8 +466,17 @@ void room_tick(void) {
     in.now = millis();
     in.tone = tone;
     in.force = forced;
-    in.poke = poke_pending;
-    in.poke_kind = poke_kind;
+    held_pat(in.now);
+    if (tone != TONE_NIGHT) night_said = false;
+    // A poke or pat asked for: which reaction, and its line. Not while she is
+    // being patted. A touch poke (kind -1) goes by the pokes in the last 10 s.
+    if (poke_pending && brain.act != RA_PAT) {
+        const RoomAct k = poke_kind >= 0 ? (RoomAct)poke_kind : room_poke_reaction(&pokes, in.now);
+        in.poke = true;
+        in.poke_kind = k;
+        if (k == RA_PAT) say(random(2) ? RV_LOVE : RV_ILOVEYOU);
+        else say(room_voice_for_reaction(k));
+    }
     poke_pending = false;
     apply_burnin(tone, have_clock || tone_override >= 0);
     if ((uint32_t)(in.now - shift_at) >= room_tuning().shift_ms) {
@@ -372,7 +486,7 @@ void room_tick(void) {
     }
     const RoomAct before = brain.act;
     room_brain_step(&brain, &in);
-    if (brain.act != before) voice_hook(brain.act);
+    if (brain.act != before) on_act((RoomAct)brain.act);
     refresh(tone);
 }
 
@@ -397,9 +511,20 @@ bool room_debug(const char* what) {
     if (strcmp(what, "status") == 0) {
         const RoomTone t = current_tone();
         Serial.printf("{\"room\":{\"visible\":%s,\"act\":\"%s\",\"frame\":%d,\"tone\":\"%s\","
-                      "\"clock\":%s,\"forced\":%s}}\n",
+                      "\"clock\":%s,\"forced\":%s,\"voice\":%s}}\n",
                       visible ? "true" : "false", room_act_name(brain.act), brain.frame,
-                      room_tone_name(t), have_clock ? "true" : "false", forced >= 0 ? "true" : "false");
+                      room_tone_name(t), have_clock ? "true" : "false", forced >= 0 ? "true" : "false",
+                      ROOM_VOICE ? "true" : "false");
+        return true;
+    }
+    if (strncmp(what, "say ", 4) == 0) {         // `room say <name>`: one of her lines, now
+        const RoomVoice v = room_voice_from_name(what + 4);
+        if (v == RV_COUNT) return false;
+        show(true);
+        if (!visible) return false;
+        const bool played = say(v);
+        Serial.printf("{\"say\":\"%s\",\"played\":%s,\"voice_built\":%s}\n", room_voice_name(v),
+                      played ? "true" : "false", ROOM_VOICE ? "true" : "false");
         return true;
     }
     const RoomTone t = room_tone_from_name(what);

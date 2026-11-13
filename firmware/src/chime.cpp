@@ -6,6 +6,7 @@
 #include <esp_heap_caps.h>
 #include <soc/soc_caps.h>
 #include "ding.h"
+#include "adpcm.h"
 
 // Shared ES8311 chime engine. See chime.h. Every ES8311 board shares one copy
 // of the codec setup and the non-blocking playback task.
@@ -65,6 +66,16 @@ static uint32_t       clip_frames = 0;
 static uint32_t       clip_repeat = 1;      // output frames per clip sample
 static volatile bool  clip_active = false;  // the task holding `playing` is a clip
 static volatile bool  ding_wanted = false;  // a ding was asked for during a clip
+
+// A voice clip (chime_play_voice): ADPCM, resampled to the I2S rate as it
+// streams. It shares the clip task and flags. A new voice while one plays is
+// queued in voice_next and cuts the playing one off at the next chunk.
+struct VoiceClip { const uint8_t* data; uint32_t samples; uint32_t rate; };
+static VoiceClip      voice_cur = {};
+static VoiceClip      voice_next = {};
+static bool           cur_is_voice = false;
+static volatile bool  voice_next_set = false;
+static volatile bool  voice_stop = false;   // end the playing voice early
 
 static bool es8311_setup(void) {
     es = es8311_create(0, cfg.es8311_addr);   // I2C port 0 (shared Wire bus)
@@ -216,7 +227,7 @@ static void drain(void) {
 // asked for.
 static void stream_clip(void) {
     uint32_t k = 0;
-    for (uint32_t n = 0; n < clip_frames && !ding_wanted; n++) {
+    for (uint32_t n = 0; n < clip_frames && !ding_wanted && !voice_stop; n++) {
         for (uint32_t r = 0; r < clip_repeat; r++) {
             chunk[2 * k] = clip_pcm[n];
             chunk[2 * k + 1] = clip_pcm[n];
@@ -229,10 +240,46 @@ static void stream_clip(void) {
     if (k) i2s.write((uint8_t*)chunk, k * 2 * sizeof(int16_t));
 }
 
+// The voice clip: ADPCM decoded and linearly resampled from its rate to the
+// I2S rate. Stops at the end, for a ding, or when voice_stop is set.
+static void stream_voice(void) {
+    const VoiceClip v = voice_cur;
+    AdpcmState st;
+    adpcm_reset(&st);
+    const uint32_t step = (uint32_t)(((uint64_t)v.rate << 16) / (uint32_t)cfg.sample_rate);
+    uint32_t frac = 0, k = 0;
+    uint32_t next = 1;                       // index of the sample s1 holds
+    int s0 = adpcm_next(&st, v.data, 0);
+    int s1 = v.samples > 1 ? adpcm_next(&st, v.data, 1) : 0;
+    for (uint32_t n = 0; n < v.samples && !ding_wanted && !voice_stop;) {   // n: index of s0
+        const int16_t o = (int16_t)(s0 + (((s1 - s0) * (int)(frac >> 4)) >> 12));
+        chunk[2 * k] = o;
+        chunk[2 * k + 1] = o;
+        if (++k == CHUNK_FRAMES) {
+            i2s.write((uint8_t*)chunk, k * 2 * sizeof(int16_t));
+            k = 0;
+        }
+        frac += step;
+        while (frac >= 65536) {
+            frac -= 65536;
+            s0 = s1;
+            n++;
+            next++;
+            s1 = next < v.samples ? adpcm_next(&st, v.data, next) : 0;
+        }
+    }
+    if (k && !ding_wanted && !voice_stop) i2s.write((uint8_t*)chunk, k * 2 * sizeof(int16_t));
+}
+
+static void play_current(void) {
+    if (cur_is_voice) stream_voice();
+    else stream_clip();
+}
+
 static void clip_task(void* arg) {
     output_on(true);
     delay(8);
-    stream_clip();
+    play_current();
     for (;;) {
         drain();
         output_on(false);
@@ -241,14 +288,27 @@ static void clip_task(void* arg) {
         portENTER_CRITICAL(&state_lock);
         const bool ding = ding_wanted;
         ding_wanted = false;
-        if (!ding) {
+        // A voice queued meanwhile plays next, unless a ding cut in: that
+        // outranks it and drops it.
+        const bool again = !ding && voice_next_set;
+        if (again) {
+            voice_cur = voice_next;
+            cur_is_voice = true;
+        }
+        voice_next_set = false;
+        voice_stop = false;
+        if (!ding && !again) {
             clip_active = false;
             playing = false;
         }
         portEXIT_CRITICAL(&state_lock);
-        if (!ding) break;
+        if (!ding && !again) break;
         output_on(true);
         delay(8);
+        if (again) {
+            play_current();
+            continue;
+        }
         if (pcm) stream_buffer();
 #if SOC_CPU_HAS_FPU
         else stream_live();
@@ -265,6 +325,9 @@ bool chime_play_clip(const int16_t* data, uint32_t frames, uint32_t rate) {
         playing = true;
         clip_active = true;
         ding_wanted = false;
+        cur_is_voice = false;
+        voice_stop = false;
+        voice_next_set = false;
     }
     portEXIT_CRITICAL(&state_lock);
     if (busy) return false;
@@ -281,6 +344,48 @@ bool chime_play_clip(const int16_t* data, uint32_t frames, uint32_t rate) {
         return false;
     }
     return true;
+}
+
+bool chime_play_voice(const uint8_t* adpcm, uint32_t samples, uint32_t rate) {
+    if (!ready || !adpcm || samples < 2 || !rate) return false;
+    portENTER_CRITICAL(&state_lock);
+    // A ding, or the render it waits for, goes first.
+    const bool ding_busy = (playing && !clip_active) || pending || rendering || !render_started;
+    const bool queue = !ding_busy && playing;      // a clip or voice is playing: cut it off
+    const bool start = !ding_busy && !playing;
+    if (queue) {
+        voice_next = { adpcm, samples, rate };
+        voice_next_set = true;
+        voice_stop = true;
+    } else if (start) {
+        voice_cur = { adpcm, samples, rate };
+        cur_is_voice = true;
+        voice_stop = false;
+        voice_next_set = false;
+        playing = true;
+        clip_active = true;
+        ding_wanted = false;
+    }
+    portEXIT_CRITICAL(&state_lock);
+    if (!start) return queue;
+    if (xTaskCreatePinnedToCore(clip_task, "chime-clip", 4096, nullptr, CHIME_TASK_PRIORITY, nullptr,
+                                CHIME_TASK_CORE) != pdPASS) {
+        portENTER_CRITICAL(&state_lock);
+        clip_active = false;
+        playing = false;
+        portEXIT_CRITICAL(&state_lock);
+        return false;
+    }
+    return true;
+}
+
+void chime_stop_voice(void) {
+    portENTER_CRITICAL(&state_lock);
+    if (playing && clip_active) {
+        voice_next_set = false;
+        voice_stop = true;
+    }
+    portEXIT_CRITICAL(&state_lock);
 }
 
 static void start_playback(void) {

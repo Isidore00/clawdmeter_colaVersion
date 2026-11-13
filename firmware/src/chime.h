@@ -37,6 +37,15 @@ void chime_play(void);
 // asked for during a clip cuts the clip off and plays.
 bool chime_play_clip(const int16_t* pcm, uint32_t frames, uint32_t rate);
 
+// Play a voice clip: IMA ADPCM, mono, `samples` of them at `rate` (adpcm.h;
+// `adpcm` must stay valid). Resampled to the I2S rate while it streams. The
+// ding outranks it (false while one plays or waits: the clip is dropped), and
+// a ding asked for during a voice cuts it off. A new voice while one plays
+// cuts that one off and plays instead (true).
+bool chime_play_voice(const uint8_t* adpcm, uint32_t samples, uint32_t rate);
+// End the playing voice (or clip) now; the speaker goes quiet.
+void chime_stop_voice(void);
+
 // Call every loop: the first call starts the background render.
 void chime_tick(void);
 

@@ -8,7 +8,9 @@
 // rules). It is its own page: the usage meters and cola's usage layer don't
 // know it exists; while it's up it simply covers them, and the director is
 // only told to keep the screensaver face away (director_hold_screensaver).
-// A swipe left on the meters brings it up, a swipe right on the room goes
+// Touch: a tap on her is a poke (1st within 10 s surprise, 2nd and 3rd shy,
+// later ones angry); a press held ~0.6 s on her head (top 30%), moved under
+// 20 px, is a head pat. A swipe left on the meters brings it up, a swipe right on the room goes
 // back.
 //
 // Memory: nothing is allocated until the page is first shown; then about
@@ -31,7 +33,9 @@ void room_on_payload(const UsageData* d);
 bool room_visible(void);
 // QA, the `room <what>` serial command: on | off | auto | day | dusk | night |
 // idle | game | drink | stretch | read | sleep | snack (hold that act until
-// `room auto`) | poke [surprise | shy | angry] | status | burnin (the panel
+// `room auto`) | poke [surprise | shy | angry | pat] (a bare poke counts like
+// a touch) | pat | say <poke_surprise | poke_shy | poke_angry | love |
+// iloveyou | morning | night | snack | drink> | status | burnin (the panel
 // brightness scale, tone, USB-sleep permission and drift offset). False for an unknown
 // word.
 bool room_debug(const char* what);

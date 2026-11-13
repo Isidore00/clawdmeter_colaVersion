@@ -12,7 +12,8 @@ full-screen object on top of them, hidden until asked for.
 | --- | --- |
 | Swipe left on the meters | open the room |
 | Swipe right on the room | back to the meters |
-| Tap her | a poke: surprise, shy or angry, about 1.5 s, then back |
+| Tap her | a poke, about 1.5 s, then back. By the pokes in the last 10 s: the 1st surprise, the 2nd and 3rd shy, the 4th on angry; 10 s without one starts the count over. A poke during a reaction starts the next one at once |
+| Hold her head | a head pat: press the top 30% of her and hold about 0.6 s without moving more than 20 px; two frames alternate for 2.5 s. A finger that moves first is a swipe or drag, never a pat; the release of a pat does nothing else |
 
 The director's screensaver face doesn't start while the room is up (nor does
 it come back after an alert); leaving the room restarts its quiet time. An
@@ -69,24 +70,53 @@ Nothing is allocated until the room is first shown. Then, in PSRAM: the
 RGB565 background 460,800 B, one decompression scratch 230,400 B (the
 background's indices, then a patch's, then a sprite frame's: one at a time),
 and her sprite 116,508 B (RGB565A8): **807,708 B (about 789 KB)**. The art is
-flash: 552,867 B of LZ4 blocks.
+flash: 572,028 B of LZ4 blocks (pat frames included).
 
 ## Serial commands (QA)
 
 `room on|off|auto|status`, `room day|dusk|night`,
 `room idle|game|drink|stretch|read|sleep|snack` (holds the act until
-`room auto`), `room poke [surprise|shy|angry]`. Each prints
-`{"room_cmd":"…","ok":true}`.
+`room auto`), `room poke [surprise|shy|angry|pat]` (a bare `room poke` counts
+like a touch), `room pat`, `room say <line>` with the line one of
+`poke_surprise poke_shy poke_angry love iloveyou morning night snack drink`
+(also prints `{"say":"…","played":…}`; `played` is false when the ding has the
+speaker or the build has no voice). Each prints `{"room_cmd":"…","ok":true}`.
 
 ## Voice
 
-Off. `room.cpp` keeps `voice_hook()` where a clip for the act that just began
-would be asked for, behind the same `COLA_VOICE` switch as the usage layer
-(default 0).
+Nine lines, spoken only while the room is up (the usage page stays quiet),
+behind `-DROOM_VOICE=1` (on in the `waveshare_amoled_216` and `sim` envs; its
+own switch, apart from `COLA_VOICE`, the usage layer's clips). Without it the
+clips aren't compiled in and `room say` reports `voice_built:false`.
+
+| Line | When |
+| --- | --- |
+| `poke_surprise` / `poke_shy` / `poke_angry` | the poke's reaction (see the table above) |
+| `love` or `iloveyou`, at random | a head pat |
+| `morning` | the first time she is entered on a day, 05:30-11:00, once the app's clock is known |
+| `night` | entering the room at night, or her falling asleep; once per stretch of night |
+| `snack` | a snack starts |
+| `drink` | a drink starts, one time in three |
+| game, stretch, read, idle | silent |
+
+Playing: the ding outranks a line (a line asked for while one plays or waits
+is dropped; a ding during a line cuts it off); a new line cuts the one that
+is playing; leaving the room stops it. Level is the codec volume the ding
+uses (the device has no separate mute: the app's `c` setting only gates the
+reset ding).
+
+Data: `tools/room_voice.py` reads `assets/cola_room/room_<line>.mp3` with
+ffmpeg, to 16 kHz mono, trims the silence at both ends (25 ms kept), fades the
+cut, peak-normalises every clip to 0.70 of full scale and encodes IMA ADPCM
+(4 bits a sample, `adpcm.cpp` decodes it) into `firmware/src/room_voice_assets.h`:
+100.5 KB for all nine (budget 200 KB). `chime.cpp` (`chime_play_voice`)
+decodes while it streams and resamples 16 kHz to the I2S rate by linear
+interpolation, so nothing is buffered. The MP3s stay in `assets/`, not in the
+firmware.
 
 ## Art pipeline
 
 `assets/cola_room_raw/` (the generated pictures, not committed) →
-`tools/room_convert.py` → `assets/cola_room/*.bin` (formats in its docstring)
+`tools/room_convert.py` (standing poses: idle, game, drink, stretch, surprise, shy, angry, snack, pat) → `assets/cola_room/*.bin` (formats in its docstring)
 → `tools/room_to_header.py` → `firmware/src/room_assets.h` (generated, never
 hand-edited; only `room.cpp` includes it).

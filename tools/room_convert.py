@@ -6,7 +6,7 @@ Reads assets/cola_room_raw/ and writes, to assets/cola_room/:
   room_bg.bin, room_palette.bin       background (480x480, 255 colours)
   room_snack_patch.bin                snack cabinet open (patch over the bg)
   room_<read|sleep>_NN.bin            room scenes as patches over the bg
-  room_<action>_NN.bin / .png         the 20 standing poses, transparent
+  room_<action>_NN.bin / .png         the 22 standing poses (incl. pat), transparent
   preview*.png, align_check.png       what the above look like
 
 Formats (all little-endian; LZ4 is the block format of tools/png_to_cola.js,
@@ -46,7 +46,7 @@ SCENES = ['read_01', 'read_02', 'read_03', 'sleep_01', 'sleep_02', 'sleep_03']
 # --- standing poses -----------------------------------------------------
 POSES = {            # action -> frames
     'idle': 2, 'game': 3, 'drink': 3, 'stretch': 3,
-    'surprise': 2, 'shy': 2, 'angry': 2, 'snack': 3,
+    'surprise': 2, 'shy': 2, 'angry': 2, 'snack': 3, 'pat': 2,
 }
 STAND_H = 240        # hair top to sole, px on the device
 BG_TOL = 10          # colour distance from the backdrop that is still backdrop
@@ -272,7 +272,9 @@ def poses():
     # scale on a pose-independent length: sole to skirt hem. The hair-top
     # height of the ordinary standing frames then gives the scale for STAND_H.
     ordinary = [f for f in frames if 'stretch_0' not in f['name'] or f['name'].endswith('_03')]
-    ordinary = [f for f in ordinary if f['name'] not in ('room_stretch_01', 'room_stretch_02')]
+    # stretch_01/02 reach overhead and the pat frames have a hand on her head: not "ordinary"
+    ordinary = [f for f in ordinary if f['name'] not in ('room_stretch_01', 'room_stretch_02')
+                and not f['name'].startswith('room_pat_')]
     ratio = np.median([f['leg'] / (f['sole'] - f['top']) for f in ordinary])
     leg_px = STAND_H * ratio
     for f in frames:

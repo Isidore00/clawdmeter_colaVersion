@@ -12,17 +12,18 @@ static const uint8_t FRAMES[RA_COUNT] = {
     2,  // shy
     2,  // angry
     3,  // snack
+    2,  // pat
 };
 
 static const char* const ACT_NAMES[RA_COUNT] = {
-    "idle", "game", "drink", "stretch", "read", "sleep", "surprise", "shy", "angry", "snack",
+    "idle", "game", "drink", "stretch", "read", "sleep", "surprise", "shy", "angry", "snack", "pat",
 };
 
 static const char* const TONE_NAMES[TONE_COUNT] = { "day", "dusk", "night" };
 
 uint8_t room_act_frames(RoomAct a) { return (unsigned)a < RA_COUNT ? FRAMES[a] : 0; }
 bool room_act_is_scene(RoomAct a) { return a == RA_READ || a == RA_SLEEP; }
-bool room_act_is_reaction(RoomAct a) { return a == RA_SURPRISE || a == RA_SHY || a == RA_ANGRY; }
+bool room_act_is_reaction(RoomAct a) { return a == RA_SURPRISE || a == RA_SHY || a == RA_ANGRY || a == RA_PAT; }
 const char* room_act_name(RoomAct a) { return (unsigned)a < RA_COUNT ? ACT_NAMES[a] : NULL; }
 RoomAct room_act_from_name(const char* n) {
     for (int i = 0; i < RA_COUNT; i++) if (strcmp(n, ACT_NAMES[i]) == 0) return (RoomAct)i;
@@ -33,6 +34,33 @@ RoomTone room_tone_from_name(const char* n) {
     for (int i = 0; i < TONE_COUNT; i++) if (strcmp(n, TONE_NAMES[i]) == 0) return (RoomTone)i;
     return TONE_COUNT;
 }
+
+static const char* const VOICE_NAMES[RV_COUNT] = {
+    "poke_surprise", "poke_shy", "poke_angry", "love", "iloveyou", "morning", "night", "snack", "drink",
+};
+const char* room_voice_name(RoomVoice v) { return (unsigned)v < RV_COUNT ? VOICE_NAMES[v] : NULL; }
+RoomVoice room_voice_from_name(const char* n) {
+    if (strncmp(n, "room_", 5) == 0) n += 5;
+    for (int i = 0; i < RV_COUNT; i++) if (strcmp(n, VOICE_NAMES[i]) == 0) return (RoomVoice)i;
+    return RV_COUNT;
+}
+RoomVoice room_voice_for_reaction(RoomAct a) {
+    switch (a) {
+    case RA_SURPRISE: return RV_POKE_SURPRISE;
+    case RA_SHY:      return RV_POKE_SHY;
+    case RA_ANGRY:    return RV_POKE_ANGRY;
+    default:          return RV_COUNT;
+    }
+}
+
+RoomAct room_poke_reaction(PokeCount* c, uint32_t now) {
+    if (c->n && (uint32_t)(now - c->last) > ROOM_POKE_WINDOW_MS) c->n = 0;
+    if (c->n < 255) c->n++;
+    c->last = now;
+    return c->n == 1 ? RA_SURPRISE : (c->n <= 3 ? RA_SHY : RA_ANGRY);
+}
+
+bool room_is_morning(int m) { return m >= 5 * 60 + 30 && m < 11 * 60; }
 
 RoomTone room_tone_for_minute(int m) {
     if (m < 0) m = 0;
@@ -85,6 +113,7 @@ static const RoomTuning TUNING = {
     20000, 40000,    // read
     1800,            // sleep_hold_ms
     1500, 400,       // react_ms, react_hold_ms
+    2500, 500,       // pat_ms, pat_hold_ms
     10UL * 60 * 1000,// hungry_after_ms
     3UL * 60 * 1000, // shift_ms
     2,               // read_weight
@@ -129,6 +158,9 @@ static void enter(RoomBrain* b, RoomAct a, uint32_t now) {
     case RA_SURPRISE: case RA_SHY: case RA_ANGRY:
         b->act_end = now + t.react_ms;
         break;
+    case RA_PAT:
+        b->act_end = now + t.pat_ms;
+        break;
     default:
         break;
     }
@@ -166,11 +198,12 @@ bool room_brain_step(RoomBrain* b, const RoomIn* in) {
         enter(b, in->force >= 0 && in->force < RA_COUNT ? (RoomAct)in->force : base_act(b), now);
     }
 
-    if (in->poke && !room_act_is_reaction(b->act)) {
-        RoomAct r;
-        if (in->poke_kind >= 0 && room_act_is_reaction((RoomAct)in->poke_kind)) r = (RoomAct)in->poke_kind;
-        else r = (RoomAct)(RA_SURPRISE + rnd(b) % 3);
-        enter(b, r, now);
+    if (in->poke && b->act != RA_PAT) {
+        const bool named = in->poke_kind >= 0 && room_act_is_reaction((RoomAct)in->poke_kind);
+        // A named reaction takes over from the one running (pokes in a row
+        // escalate); an unnamed poke waits for it to end.
+        if (named || !room_act_is_reaction(b->act))
+            enter(b, named ? (RoomAct)in->poke_kind : (RoomAct)(RA_SURPRISE + rnd(b) % 3), now);
     }
 
     const bool free_run = b->forced < 0;
@@ -221,8 +254,8 @@ bool room_brain_step(RoomBrain* b, const RoomIn* in) {
         if (free_run && b->tone != TONE_NIGHT) enter(b, RA_IDLE, now);
         break;
 
-    case RA_SURPRISE: case RA_SHY: case RA_ANGRY:
-        if (due(now, b->frame_at + t.react_hold_ms)) {
+    case RA_SURPRISE: case RA_SHY: case RA_ANGRY: case RA_PAT:
+        if (due(now, b->frame_at + (b->act == RA_PAT ? t.pat_hold_ms : t.react_hold_ms))) {
             b->frame = (uint8_t)((b->frame + 1) % n);
             b->frame_at = now;
         }

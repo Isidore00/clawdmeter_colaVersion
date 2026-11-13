@@ -328,6 +328,96 @@ static void test_frames_in_range(void) {
     }
 }
 
+static void test_pokes_escalate_and_reset(void) {
+    PokeCount c = {};
+    TEST_ASSERT_EQUAL(RA_SURPRISE, room_poke_reaction(&c, 1000));
+    TEST_ASSERT_EQUAL(RA_SHY, room_poke_reaction(&c, 2000));
+    TEST_ASSERT_EQUAL(RA_SHY, room_poke_reaction(&c, 3000));
+    TEST_ASSERT_EQUAL(RA_ANGRY, room_poke_reaction(&c, 4000));
+    TEST_ASSERT_EQUAL(RA_ANGRY, room_poke_reaction(&c, 5000));
+    // Exactly 10 s since the last still counts; more than that starts over.
+    TEST_ASSERT_EQUAL(RA_ANGRY, room_poke_reaction(&c, 15000));
+    TEST_ASSERT_EQUAL(RA_SURPRISE, room_poke_reaction(&c, 25001));
+    TEST_ASSERT_EQUAL(RA_SHY, room_poke_reaction(&c, 26000));
+    // Each poke refreshes the window: pokes 9 s apart keep escalating.
+    PokeCount d = {};
+    uint32_t t = 100;
+    room_poke_reaction(&d, t);
+    for (int i = 0; i < 3; i++) { t += 9000; room_poke_reaction(&d, t); }
+    TEST_ASSERT_EQUAL(RA_ANGRY, room_poke_reaction(&d, t + 9000));
+    // The millis() wrap does not break the window.
+    PokeCount w = {};
+    room_poke_reaction(&w, 0xFFFFFF00u);
+    TEST_ASSERT_EQUAL(RA_SHY, room_poke_reaction(&w, 500));
+}
+
+static void test_voice_names_and_lines(void) {
+    for (int v = 0; v < RV_COUNT; v++) {
+        TEST_ASSERT_EQUAL(v, room_voice_from_name(room_voice_name((RoomVoice)v)));
+        char buf[40];
+        snprintf(buf, sizeof buf, "room_%s", room_voice_name((RoomVoice)v));
+        TEST_ASSERT_EQUAL(v, room_voice_from_name(buf));
+    }
+    TEST_ASSERT_EQUAL(RV_COUNT, room_voice_from_name("game"));
+    TEST_ASSERT_NULL(room_voice_name(RV_COUNT));
+    TEST_ASSERT_EQUAL(RV_POKE_SURPRISE, room_voice_for_reaction(RA_SURPRISE));
+    TEST_ASSERT_EQUAL(RV_POKE_SHY, room_voice_for_reaction(RA_SHY));
+    TEST_ASSERT_EQUAL(RV_POKE_ANGRY, room_voice_for_reaction(RA_ANGRY));
+    TEST_ASSERT_EQUAL(RV_COUNT, room_voice_for_reaction(RA_PAT));    // a pat picks love / iloveyou itself
+    TEST_ASSERT_EQUAL(RV_COUNT, room_voice_for_reaction(RA_IDLE));
+}
+
+static void test_morning_window(void) {
+    TEST_ASSERT_FALSE(room_is_morning(5 * 60 + 29));
+    TEST_ASSERT_TRUE(room_is_morning(5 * 60 + 30));
+    TEST_ASSERT_TRUE(room_is_morning(10 * 60 + 59));
+    TEST_ASSERT_FALSE(room_is_morning(11 * 60));
+}
+
+static void test_pat_lasts_then_returns(void) {
+    RoomBrain b;
+    room_brain_init(&b, 0, 5);
+    RoomIn i = in_at(1000);
+    i.poke = true;
+    i.poke_kind = RA_PAT;
+    room_brain_step(&b, &i);
+    TEST_ASSERT_EQUAL(RA_PAT, b.act);
+    // Two frames alternate for the whole pat; other pokes change nothing.
+    uint32_t frames_seen = 0;
+    for (uint32_t t = 1050; t < 1000 + room_tuning().pat_ms - 100; t += 50) {
+        i = in_at(t);
+        if (t % 300 == 0) { i.poke = true; i.poke_kind = RA_ANGRY; }
+        room_brain_step(&b, &i);
+        TEST_ASSERT_EQUAL(RA_PAT, b.act);
+        frames_seen |= 1u << b.frame;
+    }
+    TEST_ASSERT_EQUAL_HEX32(3, frames_seen);
+    i = in_at(1000 + room_tuning().pat_ms + 60);
+    room_brain_step(&b, &i);
+    TEST_ASSERT_EQUAL(RA_IDLE, b.act);
+    TEST_ASSERT_EQUAL(2, room_act_frames(RA_PAT));
+    TEST_ASSERT_TRUE(room_tuning().pat_ms >= 2400 && room_tuning().pat_ms <= 2600);
+}
+
+static void test_named_poke_takes_over_a_reaction(void) {
+    RoomBrain b;
+    room_brain_init(&b, 0, 9);
+    RoomIn i = in_at(1000);
+    i.poke = true;
+    i.poke_kind = RA_SURPRISE;
+    room_brain_step(&b, &i);
+    TEST_ASSERT_EQUAL(RA_SURPRISE, b.act);
+    i = in_at(1300);
+    i.poke = true;
+    i.poke_kind = RA_SHY;
+    room_brain_step(&b, &i);
+    TEST_ASSERT_EQUAL(RA_SHY, b.act);
+    // The reaction runs its full time from the newest poke.
+    i = in_at(1300 + room_tuning().react_ms - 100);
+    room_brain_step(&b, &i);
+    TEST_ASSERT_EQUAL(RA_SHY, b.act);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_names);
@@ -348,5 +438,10 @@ int main(int, char**) {
     RUN_TEST(test_force_holds_and_releases);
     RUN_TEST(test_poke_over_a_held_act_returns_to_it);
     RUN_TEST(test_frames_in_range);
+    RUN_TEST(test_pokes_escalate_and_reset);
+    RUN_TEST(test_voice_names_and_lines);
+    RUN_TEST(test_morning_window);
+    RUN_TEST(test_pat_lasts_then_returns);
+    RUN_TEST(test_named_poke_takes_over_a_reaction);
     return UNITY_END();
 }

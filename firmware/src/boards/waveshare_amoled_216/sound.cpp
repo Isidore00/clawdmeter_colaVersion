@@ -33,5 +33,9 @@ void sound_hal_tick(void)       { chime_tick(); }
 bool sound_hal_clip(const int16_t* pcm, uint32_t frames, uint32_t rate) {
     return chime_play_clip(pcm, frames, rate);
 }
+bool sound_hal_voice(const uint8_t* adpcm, uint32_t samples, uint32_t rate) {
+    return chime_play_voice(adpcm, samples, rate);
+}
+void sound_hal_voice_stop(void) { chime_stop_voice(); }
 
 #endif  // BOARD_HAS_SOUND

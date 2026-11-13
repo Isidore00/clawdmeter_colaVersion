@@ -17,7 +17,7 @@ SRC = os.path.join(ROOT, 'assets', 'cola_room')
 OUT = os.path.join(ROOT, 'firmware', 'src', 'room_assets.h')
 
 POSES = {'idle': 2, 'game': 3, 'drink': 3, 'stretch': 3,
-         'surprise': 2, 'shy': 2, 'angry': 2, 'snack': 3}
+         'surprise': 2, 'shy': 2, 'angry': 2, 'snack': 3, 'pat': 2}
 SCENES = {'read': 3, 'sleep': 3}
 ROOM_W = 480
 

@@ -17,6 +17,7 @@ enum RoomAct {
     RA_SHY,
     RA_ANGRY,
     RA_SNACK,       // hungry: the cabinet drawer open (a patch), snack frames
+    RA_PAT,         // a head pat: two frames for ~2.5 s (counts as a reaction: timed, then back)
     RA_COUNT
 };
 
@@ -26,7 +27,7 @@ enum RoomTone { TONE_DAY, TONE_DUSK, TONE_NIGHT, TONE_COUNT };
 // read and sleep.
 uint8_t room_act_frames(RoomAct a);
 bool    room_act_is_scene(RoomAct a);       // read / sleep: her pose is part of the background
-bool    room_act_is_reaction(RoomAct a);    // surprise / shy / angry
+bool    room_act_is_reaction(RoomAct a);    // surprise / shy / angry / pat
 const char* room_act_name(RoomAct a);       // "idle", "game", ...; NULL out of range
 RoomAct room_act_from_name(const char* name);   // RA_COUNT when unknown
 const char* room_tone_name(RoomTone t);
@@ -53,6 +54,31 @@ uint8_t room_brightness_pct(RoomTone tone, bool clock_known);
 #define ROOM_SHIFT_STEPS 8
 void room_shift_for_step(unsigned step, int* dx, int* dy);
 
+// Her spoken lines (tools/room_voice.py makes them in this order; the names
+// are what `room say` takes). Spoken only on the room page.
+enum RoomVoice {
+    RV_POKE_SURPRISE, RV_POKE_SHY, RV_POKE_ANGRY, RV_LOVE, RV_ILOVEYOU,
+    RV_MORNING, RV_NIGHT, RV_SNACK, RV_DRINK,
+    RV_COUNT
+};
+const char* room_voice_name(RoomVoice v);               // "poke_shy", ...; NULL out of range
+RoomVoice room_voice_from_name(const char* name);       // RV_COUNT when unknown (a "room_" prefix is fine)
+// The line a poke reaction speaks (RV_COUNT: none).
+RoomVoice room_voice_for_reaction(RoomAct a);
+
+// Pokes in a row: the n-th within POKE_WINDOW_MS of the one before. 1st
+// surprise, 2nd and 3rd shy, 4th and later angry; a gap longer than the
+// window starts over.
+#define ROOM_POKE_WINDOW_MS 10000
+struct PokeCount {
+    uint32_t last;
+    uint8_t  n;
+};
+RoomAct room_poke_reaction(PokeCount* c, uint32_t now);
+
+// Morning is 05:30-11:00 (minute of the local day).
+bool room_is_morning(int minute_of_day);
+
 struct RoomTuning {
     uint32_t idle_hold_ms;        // each of the two idle frames
     uint32_t idle_wait_min_ms;    // standing about before the next daily act
@@ -64,6 +90,8 @@ struct RoomTuning {
     uint32_t sleep_hold_ms;       // each sleep patch variant
     uint32_t react_ms;            // a poke reaction
     uint32_t react_hold_ms;       // its frames
+    uint32_t pat_ms;              // a head pat
+    uint32_t pat_hold_ms;         // each of its two frames
     uint32_t hungry_after_ms;     // since the last snack
     uint32_t shift_ms;            // time between burn-in shift steps
     uint8_t  read_weight;         // chance weights for the next daily act (of game/drink/stretch = 3 each)
@@ -71,8 +99,9 @@ struct RoomTuning {
 const RoomTuning& room_tuning(void);
 
 // An input to one step. `force` >= 0 holds that act (QA, `room <act>`);
-// `poke` starts a reaction (poke_kind: a reaction RoomAct, or < 0 for a
-// random one) unless one is already running.
+// `poke` starts a reaction (poke_kind: a reaction RoomAct, which also takes
+// over from a reaction already running, a pat excepted; or < 0 for a random
+// one of surprise / shy / angry, ignored while one is running).
 struct RoomIn {
     uint32_t now;
     RoomTone tone;

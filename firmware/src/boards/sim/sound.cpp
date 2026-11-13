@@ -10,3 +10,9 @@ bool sound_hal_clip(const int16_t* pcm, uint32_t frames, uint32_t rate) {
     printf("[sim] clip (%u frames at %u Hz)\n", (unsigned)frames, (unsigned)rate);
     return true;
 }
+bool sound_hal_voice(const uint8_t* adpcm, uint32_t samples, uint32_t rate) {
+    (void)adpcm;
+    printf("[sim] voice (%u samples at %u Hz)\n", (unsigned)samples, (unsigned)rate);
+    return true;
+}
+void sound_hal_voice_stop(void) {}

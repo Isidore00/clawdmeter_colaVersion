@@ -20,3 +20,9 @@ void sound_hal_tune(float gain, int volume);
 // Non-blocking; `pcm` must stay valid. The ding goes first: false (try again
 // later) while one is playing or waiting, or without sound.
 bool sound_hal_clip(const int16_t* pcm, uint32_t frames, uint32_t rate);
+// A voice clip for the room page (room.h), on the same boards. IMA ADPCM
+// (adpcm.h), mono, played at once; a voice already playing is cut off for it,
+// and the ding goes first (false: dropped, or no sound).
+// sound_hal_voice_stop() ends whatever voice is playing.
+bool sound_hal_voice(const uint8_t* adpcm, uint32_t samples, uint32_t rate);
+void sound_hal_voice_stop(void);

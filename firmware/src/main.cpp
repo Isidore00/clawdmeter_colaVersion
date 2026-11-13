@@ -251,7 +251,9 @@ static void check_serial_cmd() {
             else if (strncmp(cmd_buf, "room ", 5) == 0) {
                 // QA: the room page. `room on|off|auto|status|day|dusk|night`,
                 // `room <idle|game|drink|stretch|read|sleep|snack>` holds an act
-                // until `room auto`, `room poke [surprise|shy|angry]`. See room.h.
+                // until `room auto`, `room poke [surprise|shy|angry|pat]`, `room pat`,
+                // `room say <poke_surprise|poke_shy|poke_angry|love|iloveyou|
+                // morning|night|snack|drink>`. See room.h.
                 const bool ok = room_debug(cmd_buf + 5);
                 Serial.printf("{\"room_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 5, ok ? "true" : "false");
             }
