@@ -11,6 +11,18 @@ void idle_note_activity(void);
 // picked up by the next fade-in. See brightness.{h,cpp}.
 void idle_set_awake_brightness(uint8_t level);
 
+// A page dims the awake level to pct percent of what the user chose (0..100;
+// 100 = as chosen). Applied at once while awake, and by every fade-in. The
+// room page uses it to dim by time of day (burn-in, room.cpp).
+void idle_set_awake_scale(uint8_t pct);
+uint8_t idle_get_awake_scale(void);
+
+// While on, the 30 minute auto-sleep also runs on USB power
+// (IDLE_SLEEP_WHEN_CHARGING stays the default when off), and plugging USB in
+// no longer wakes the panel. A button or touch still wakes it.
+void idle_set_sleep_on_usb(bool on);
+bool idle_get_sleep_on_usb(void);
+
 // Returns true if this press was consumed as a wake-up (caller MUST skip the
 // button's normal action). Returns false when already awake — also notes the
 // activity, so callers don't need a separate idle_note_activity() call.

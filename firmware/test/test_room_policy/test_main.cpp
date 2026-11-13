@@ -2,6 +2,7 @@
 //   pio test -d firmware -e native -f test_room_policy
 #include <unity.h>
 #include <initializer_list>
+#include <stdlib.h>
 #include "room_policy.h"
 
 void setUp(void) {}
@@ -60,6 +61,34 @@ static void test_tint(void) {
     TEST_ASSERT_TRUE((n & 31) > ((n >> 11) & 31));
     const uint16_t d = room_tint565(white, TONE_DUSK);
     TEST_ASSERT_TRUE((d & 31) < ((d >> 11) & 31));
+}
+
+static void test_brightness_by_tone(void) {
+    TEST_ASSERT_EQUAL(100, room_brightness_pct(TONE_DAY, true));
+    TEST_ASSERT_EQUAL(60, room_brightness_pct(TONE_DUSK, true));
+    TEST_ASSERT_EQUAL(25, room_brightness_pct(TONE_NIGHT, true));
+    // No wall clock yet: the tone is a guess (always day), so dusk's level.
+    TEST_ASSERT_EQUAL(60, room_brightness_pct(TONE_DAY, false));
+    TEST_ASSERT_EQUAL(60, room_brightness_pct(TONE_NIGHT, false));
+}
+
+static void test_shift_ring(void) {
+    int px = 0, py = 0;
+    room_shift_for_step(0, &px, &py);
+    TEST_ASSERT_EQUAL(0, px);
+    TEST_ASSERT_EQUAL(0, py);
+    for (unsigned i = 1; i <= 3 * ROOM_SHIFT_STEPS; i++) {
+        int x, y;
+        room_shift_for_step(i, &x, &y);
+        TEST_ASSERT_TRUE(x >= 0 && x <= 2 && y >= 0 && y <= 2);
+        TEST_ASSERT_TRUE(abs(x - px) <= 1 && abs(y - py) <= 1);     // never a visible jump
+        TEST_ASSERT_TRUE(x != px || y != py);                       // and always a step
+        px = x; py = y;
+    }
+    // Round the ring and back to the start.
+    room_shift_for_step(ROOM_SHIFT_STEPS, &px, &py);
+    TEST_ASSERT_EQUAL(0, px);
+    TEST_ASSERT_EQUAL(0, py);
 }
 
 static void test_starts_idle_and_alternates(void) {
@@ -304,6 +333,8 @@ int main(int, char**) {
     RUN_TEST(test_names);
     RUN_TEST(test_tone_by_time);
     RUN_TEST(test_tint);
+    RUN_TEST(test_brightness_by_tone);
+    RUN_TEST(test_shift_ring);
     RUN_TEST(test_starts_idle_and_alternates);
     RUN_TEST(test_daily_acts_come_and_go);
     RUN_TEST(test_every_daily_act_and_reading_happen);

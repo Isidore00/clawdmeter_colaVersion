@@ -58,6 +58,24 @@ uint16_t room_tint565(uint16_t c, RoomTone tone) {
     return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
+uint8_t room_brightness_pct(RoomTone tone, bool clock_known) {
+    if (!clock_known) return 60;
+    switch (tone) {
+    case TONE_DUSK:  return 60;
+    case TONE_NIGHT: return 25;
+    default:         return 100;
+    }
+}
+
+void room_shift_for_step(unsigned step, int* dx, int* dy) {
+    static const int8_t RING[ROOM_SHIFT_STEPS][2] = {
+        {0, 0}, {1, 0}, {2, 0}, {2, 1}, {2, 2}, {1, 2}, {0, 2}, {0, 1},
+    };
+    const unsigned i = step % ROOM_SHIFT_STEPS;
+    *dx = RING[i][0];
+    *dy = RING[i][1];
+}
+
 static const RoomTuning TUNING = {
     700,             // idle_hold_ms
     15000, 40000,    // idle_wait
@@ -68,6 +86,7 @@ static const RoomTuning TUNING = {
     1800,            // sleep_hold_ms
     1500, 400,       // react_ms, react_hold_ms
     10UL * 60 * 1000,// hungry_after_ms
+    3UL * 60 * 1000, // shift_ms
     2,               // read_weight
 };
 const RoomTuning& room_tuning(void) { return TUNING; }

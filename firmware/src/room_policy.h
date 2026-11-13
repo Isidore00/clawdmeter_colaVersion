@@ -41,6 +41,18 @@ RoomTone room_tone_for_minute(int minute_of_day);
 // palette, so she's lit like the room.
 uint16_t room_tint565(uint16_t rgb565, RoomTone tone);
 
+// Panel brightness for the tone, in percent of the user's level (burn-in
+// protection: a lit AMOLED showing a still room). Day 100, dusk 60, night 25.
+// Before any wall clock has arrived (`clock_known` false) the tone is only a
+// guess, and the answer is the dusk level.
+uint8_t room_brightness_pct(RoomTone tone, bool clock_known);
+
+// Burn-in drift: the whole room image shifts by 0-2 px, one step per
+// SHIFT_MS, round a ring of ROOM_SHIFT_STEPS offsets and back to (0, 0).
+// Neighbouring steps differ by at most 1 px per axis.
+#define ROOM_SHIFT_STEPS 8
+void room_shift_for_step(unsigned step, int* dx, int* dy);
+
 struct RoomTuning {
     uint32_t idle_hold_ms;        // each of the two idle frames
     uint32_t idle_wait_min_ms;    // standing about before the next daily act
@@ -53,6 +65,7 @@ struct RoomTuning {
     uint32_t react_ms;            // a poke reaction
     uint32_t react_hold_ms;       // its frames
     uint32_t hungry_after_ms;     // since the last snack
+    uint32_t shift_ms;            // time between burn-in shift steps
     uint8_t  read_weight;         // chance weights for the next daily act (of game/drink/stretch = 3 each)
 };
 const RoomTuning& room_tuning(void);

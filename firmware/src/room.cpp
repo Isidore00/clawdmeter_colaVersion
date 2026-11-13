@@ -40,6 +40,11 @@ static lv_obj_t* root = NULL;
 static lv_obj_t* bg_img = NULL;
 static lv_obj_t* sp_img = NULL;
 static int       off_x = 0, off_y = 0;       // the 480x480 room's corner on the screen
+// Burn-in drift: everything on the page (background, patches, her) moves
+// together by this much, a pixel at a time, every few minutes.
+static int       shift_x = 0, shift_y = 0;
+static unsigned  shift_step = 0;
+static uint32_t  shift_at = 0;
 
 static uint8_t*  bgbuf = NULL;               // RGB565 480x480 (PSRAM)
 static uint8_t*  scratch = NULL;             // decompressed indices of what's being drawn (PSRAM)
@@ -80,7 +85,21 @@ static void feet_for(RoomAct a, int* x, int* y) {
 static void place_sprite(RoomAct a) {
     int fx, fy;
     feet_for(a, &fx, &fy);
-    lv_obj_set_pos(sp_img, off_x + fx - ROOM_POSE_W / 2, off_y + fy - ROOM_POSE_GROUND);
+    lv_obj_set_pos(sp_img, off_x + shift_x + fx - ROOM_POSE_W / 2, off_y + shift_y + fy - ROOM_POSE_GROUND);
+}
+
+// One step round the drift ring: the background moves, and she with it.
+static void apply_shift(void) {
+    room_shift_for_step(shift_step, &shift_x, &shift_y);
+    lv_obj_set_pos(bg_img, off_x + shift_x, off_y + shift_y);
+    place_sprite((RoomAct)brain.act);
+}
+
+// Panel dimming and the USB sleep permission that go with the page: dim by
+// the time of day, and at night let the panel sleep even on USB power.
+static void apply_burnin(RoomTone tone, bool clock_known) {
+    idle_set_awake_scale(room_brightness_pct(tone, clock_known));
+    idle_set_sleep_on_usb(tone == TONE_NIGHT);
 }
 
 static void voice_hook(RoomAct a) {
@@ -238,10 +257,15 @@ static void show(bool on) {
         drawn_tone = TONE_COUNT;
         drawn_act = drawn_frame = -1;
         visible = true;
+        shift_at = millis();
+        apply_shift();
+        apply_burnin(current_tone(), have_clock || tone_override >= 0);
         refresh(current_tone());
     } else {
         visible = false;
         lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);
+        idle_set_awake_scale(100);          // the meters keep the user's brightness
+        idle_set_sleep_on_usb(false);
         director_hold_screensaver(false);
     }
     Serial.printf("{\"room\":\"%s\"}\n", on ? "on" : "off");
@@ -252,12 +276,12 @@ static bool hit(int x, int y) {
     int x0, y0, x1, y1;
     const room_patch_t* p = room_act_is_scene(brain.act) ? patch_for(&brain) : NULL;
     if (p) {
-        x0 = off_x + p->x; y0 = off_y + p->y; x1 = x0 + p->w; y1 = y0 + p->h;
+        x0 = off_x + shift_x + p->x; y0 = off_y + shift_y + p->y; x1 = x0 + p->w; y1 = y0 + p->h;
     } else {
         int fx, fy;
         feet_for(brain.act, &fx, &fy);
-        x0 = off_x + fx - ROOM_POSE_W / 2;
-        y0 = off_y + fy - ROOM_POSE_GROUND;
+        x0 = off_x + shift_x + fx - ROOM_POSE_W / 2;
+        y0 = off_y + shift_y + fy - ROOM_POSE_GROUND;
         x1 = x0 + ROOM_POSE_W; y1 = y0 + ROOM_POSE_H;
     }
     return x >= x0 && x < x1 && y >= y0 && y < y1;
@@ -340,6 +364,12 @@ void room_tick(void) {
     in.poke = poke_pending;
     in.poke_kind = poke_kind;
     poke_pending = false;
+    apply_burnin(tone, have_clock || tone_override >= 0);
+    if ((uint32_t)(in.now - shift_at) >= room_tuning().shift_ms) {
+        shift_at = in.now;
+        shift_step++;
+        apply_shift();
+    }
     const RoomAct before = brain.act;
     room_brain_step(&brain, &in);
     if (brain.act != before) voice_hook(brain.act);
@@ -353,6 +383,15 @@ bool room_debug(const char* what) {
     if (strcmp(what, "auto") == 0) {
         forced = -1;
         tone_override = -1;
+        return true;
+    }
+    if (strcmp(what, "burnin") == 0) {
+        const RoomTone t = current_tone();
+        Serial.printf("{\"burnin\":{\"brightness_pct\":%d,\"tone\":\"%s\",\"clock\":%s,"
+                      "\"usb_sleep\":%s,\"shift\":[%d,%d],\"visible\":%s}}\n",
+                      (int)idle_get_awake_scale(), room_tone_name(t), have_clock ? "true" : "false",
+                      idle_get_sleep_on_usb() ? "true" : "false", shift_x, shift_y,
+                      visible ? "true" : "false");
         return true;
     }
     if (strcmp(what, "status") == 0) {

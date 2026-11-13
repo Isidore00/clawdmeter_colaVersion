@@ -18,13 +18,23 @@ static uint32_t fade_last_step_ms = 0;
 static uint8_t  fade_from = DISPLAY_DEFAULT_BRIGHTNESS;
 static uint8_t  fade_to   = 0;
 static uint8_t  awake_brightness = DISPLAY_DEFAULT_BRIGHTNESS;  // user-set "full" level (brightness.cpp)
+static uint8_t  awake_scale_pct = 100;                          // a page dims the awake level (idle_set_awake_scale)
+static bool     sleep_on_usb = false;                           // sleep even on USB power (idle_set_sleep_on_usb)
+
+// What "awake" means: the user's level, scaled. Never 0 while the level isn't,
+// so a dimmed panel stays on.
+static uint8_t awake_level(void) {
+    if (awake_scale_pct >= 100 || awake_brightness == 0) return awake_brightness;
+    const uint32_t v = ((uint32_t)awake_brightness * awake_scale_pct + 50) / 100;
+    return (uint8_t)(v ? v : 1);
+}
 
 static void apply_brightness(uint8_t b) {
     display_hal_set_brightness(b);
 }
 
 static void begin_fade(uint8_t to, uint32_t now) {
-    fade_from = (to == 0) ? awake_brightness : 0;
+    fade_from = (to == 0) ? awake_level() : 0;
     fade_to   = to;
     fade_started_ms = now;
     fade_last_step_ms = now;
@@ -33,15 +43,28 @@ static void begin_fade(uint8_t to, uint32_t now) {
 void idle_init(void) {
     state = STATE_AWAKE;
     last_activity_ms = millis();
-    apply_brightness(awake_brightness);
+    apply_brightness(awake_level());
 }
 
 void idle_set_awake_brightness(uint8_t level) {
     awake_brightness = level;
     // Apply now if fully awake so a button press is visible immediately;
     // during fades/sleep the next fade-in picks it up.
-    if (state == STATE_AWAKE) apply_brightness(level);
+    if (state == STATE_AWAKE) apply_brightness(awake_level());
 }
+
+void idle_set_awake_scale(uint8_t pct) {
+    if (pct > 100) pct = 100;
+    if (pct == awake_scale_pct) return;
+    awake_scale_pct = pct;
+    if (state == STATE_AWAKE) apply_brightness(awake_level());
+}
+
+uint8_t idle_get_awake_scale(void) { return awake_scale_pct; }
+
+void idle_set_sleep_on_usb(bool on) { sleep_on_usb = on; }
+
+bool idle_get_sleep_on_usb(void) { return sleep_on_usb; }
 
 void idle_note_activity(void) {
     last_activity_ms = millis();
@@ -49,7 +72,7 @@ void idle_note_activity(void) {
     if (state == STATE_AWAKE) return;
     // Asleep/fading-out shouldn't reach here in normal flow (callers gate via
     // idle_consume_wake_press first), but if it does: trigger a wake.
-    begin_fade(awake_brightness, last_activity_ms);
+    begin_fade(awake_level(), last_activity_ms);
     state = STATE_FADING_IN;
 }
 
@@ -57,7 +80,7 @@ bool idle_consume_wake_press(void) {
     if (state == STATE_ASLEEP || state == STATE_FADING_OUT) {
         uint32_t now = millis();
         last_activity_ms = now;
-        begin_fade(awake_brightness, now);
+        begin_fade(awake_level(), now);
         state = STATE_FADING_IN;
         return true;
     }
@@ -80,10 +103,10 @@ void idle_tick(void) {
 
     // While on USB power (if configured), don't sleep — and wake from sleep
     // when power comes back. Treats USB-in as continuous activity.
-    if (!IDLE_SLEEP_WHEN_CHARGING && power_hal_is_vbus_in()) {
+    if (!IDLE_SLEEP_WHEN_CHARGING && !sleep_on_usb && power_hal_is_vbus_in()) {
         last_activity_ms = now;
         if (state == STATE_ASLEEP || state == STATE_FADING_OUT) {
-            begin_fade(awake_brightness, now);
+            begin_fade(awake_level(), now);
             state = STATE_FADING_IN;
         }
     }

@@ -46,6 +46,23 @@ and night recolour the background palette and every sprite palette
 (`room_tint565`), so she is lit like the room. `room day|dusk|night` forces a
 tone, `room auto` goes back to the clock.
 
+## Burn-in protection
+
+A still room on an AMOLED is the worst case, so while the page is up:
+
+- **Dimming** (`idle_set_awake_scale`, idle.cpp): the awake brightness is the
+  user's level times day 100 %, dusk 60 %, night 25 %. Before the app has sent
+  a wall clock (the tone is only "day" by default) it's 60 %. Leaving the room
+  puts it back to 100 %.
+- **USB sleep** (`idle_set_sleep_on_usb`): at night the usual 30 minute
+  auto-sleep also runs on USB power (normally it never sleeps there); a
+  button or touch wakes the panel.
+- **Drift**: every 3 minutes the whole page (background, patches and her,
+  hit boxes included) steps one pixel round a ring of 0-2 px offsets and
+  back to (0, 0): 24 minutes a lap.
+- `room burnin` prints the brightness scale, tone, clock known, USB-sleep
+  permission and the current drift offset.
+
 ## Memory
 
 Nothing is allocated until the room is first shown. Then, in PSRAM: the

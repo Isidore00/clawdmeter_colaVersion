@@ -31,7 +31,8 @@ void room_on_payload(const UsageData* d);
 bool room_visible(void);
 // QA, the `room <what>` serial command: on | off | auto | day | dusk | night |
 // idle | game | drink | stretch | read | sleep | snack (hold that act until
-// `room auto`) | poke [surprise | shy | angry] | status. False for an unknown
+// `room auto`) | poke [surprise | shy | angry] | status | burnin (the panel
+// brightness scale, tone, USB-sleep permission and drift offset). False for an unknown
 // word.
 bool room_debug(const char* what);
 
