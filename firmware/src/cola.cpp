@@ -13,6 +13,14 @@
 
 static_assert(COLA_ANIM_COUNT == COLA_STATE_COUNT, "cola_assets.h and ColaState drifted");
 
+// Cola's spoken clips (reply / empty / reset). Off by default: the usage page
+// keeps the alert ding and the art, no voice. Build with -DCOLA_VOICE=1 to
+// turn them back on (e.g. for the room page). The audio data stays in
+// cola_assets.h; with the switch off the linker drops it from the image.
+#ifndef COLA_VOICE
+#define COLA_VOICE 0
+#endif
+
 // How long each frame stays up, per state.
 static const uint16_t HOLD_MS[COLA_STATE_COUNT] = {
     250,   // idle
@@ -79,6 +87,7 @@ static void enter(ColaState s, uint32_t now) {
 }
 
 static void want_clip(ColaState s) {
+    if (!COLA_VOICE) return;
     if (!cola_clips[s].pcm) return;
     clip = s;
     clip_at = millis();
