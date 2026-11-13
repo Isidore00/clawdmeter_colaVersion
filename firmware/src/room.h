@@ -5,10 +5,11 @@
 // The room page: "Cola's room", a second page next to the usage meters. A
 // full-screen scene (art in room_assets.h, from assets/cola_room/) with her
 // standing on the rug, doing small things on her own (room_policy.h holds the
-// rules). It is its own page: the usage meters, the director and cola's
-// usage layer aren't changed by it and don't know it exists; while it's up
-// it simply covers them. A swipe left on the meters brings it up, a swipe
-// right on the room goes back.
+// rules). It is its own page: the usage meters and cola's usage layer don't
+// know it exists; while it's up it simply covers them, and the director is
+// only told to keep the screensaver face away (director_hold_screensaver).
+// A swipe left on the meters brings it up, a swipe right on the room goes
+// back.
 //
 // Memory: nothing is allocated until the page is first shown; then about
 // 790 KB of PSRAM (the 480x480 RGB565 background, one frame's worth of
@@ -20,8 +21,9 @@
 #if CLAWD_COLA
 
 // parent: the screen. Call after director_init() so the page sits above
-// everything the screen holds (only the screensaver face, on the top layer,
-// is above it).
+// everything the screen holds. (The face lives on the top layer, above it:
+// the screensaver is held off while the room is up, an alert's face still
+// shows.)
 void room_create(lv_obj_t* parent);
 void room_tick(void);
 // Per parsed payload: the app's wall clock (`t`) sets the time of day.

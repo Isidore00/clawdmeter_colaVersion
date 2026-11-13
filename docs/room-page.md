@@ -14,6 +14,10 @@ full-screen object on top of them, hidden until asked for.
 | Swipe right on the room | back to the meters |
 | Tap her | a poke: surprise, shy or angry, about 1.5 s, then back |
 
+The director's screensaver face doesn't start while the room is up (nor does
+it come back after an alert); leaving the room restarts its quiet time. An
+alert's face still shows.
+
 All three physical buttons already have jobs (HID Space, Shift+Tab,
 brightness; users can remap them in the app), so the page switch is a swipe,
 not a button.
@@ -28,6 +32,9 @@ not a button.
   variants) until morning; a poke wakes her for a moment.
 - **Hungry** (10 min since the last snack): the next act is the snack: the
   cabinet drawer patch is applied and the `snack` frames loop 3–5 times.
+- While eating she stands by the cabinet, at (384, 428) instead of the rug
+  (240, 418): as close as she can get with the drawer patch (x 417–466,
+  y 283–340) clear in all three frames; `preview_snack_pos.png` shows it.
 - Every timing is in `RoomTuning` (`room_policy.cpp`).
 
 ## Time of day

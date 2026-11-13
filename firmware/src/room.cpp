@@ -22,6 +22,11 @@
 // Where her feet are on the rug (room pixels, 480x480).
 #define FEET_X 240
 #define FEET_Y 418
+// Eating a snack she stands by the cabinet: as close as she can get with the
+// drawer patch (x 417-466, y 283-340) left clear in all three frames
+// (assets/cola_room/preview_snack_pos.png).
+#define SNACK_FEET_X 384
+#define SNACK_FEET_Y 428
 
 // A swipe: this far sideways, this little up or down, this quickly.
 #define SWIPE_MIN_DX   100
@@ -65,6 +70,18 @@ static int       poke_kind = -1;
 // Touch tracking (see the indev callback)
 static lv_point_t press_pt;
 static uint32_t   press_ms = 0;
+
+// Where her feet are for an act (room pixels).
+static void feet_for(RoomAct a, int* x, int* y) {
+    *x = a == RA_SNACK ? SNACK_FEET_X : FEET_X;
+    *y = a == RA_SNACK ? SNACK_FEET_Y : FEET_Y;
+}
+
+static void place_sprite(RoomAct a) {
+    int fx, fy;
+    feet_for(a, &fx, &fy);
+    lv_obj_set_pos(sp_img, off_x + fx - ROOM_POSE_W / 2, off_y + fy - ROOM_POSE_GROUND);
+}
 
 static void voice_hook(RoomAct a) {
     (void)a;
@@ -198,6 +215,7 @@ static void refresh(RoomTone tone) {
         drawn_frame = brain.frame;
     } else if (tone_changed || drawn_act != brain.act || drawn_frame != brain.frame) {
         const room_pose_t* f = pose_for(brain.act, brain.frame);
+        if (drawn_act != brain.act) place_sprite((RoomAct)brain.act);
         if (f) draw_pose(f, tone);
         lv_obj_clear_flag(sp_img, LV_OBJ_FLAG_HIDDEN);
         drawn_act = brain.act;
@@ -213,6 +231,7 @@ static void show(bool on) {
         // Whatever the meters were doing (a peek from the press that started
         // this swipe, an alert) is over: the director goes home first.
         director_debug("home");
+        director_hold_screensaver(true);
         lv_obj_move_foreground(root);
         lv_obj_clear_flag(root, LV_OBJ_FLAG_HIDDEN);
         bg_drawn = false;
@@ -223,6 +242,7 @@ static void show(bool on) {
     } else {
         visible = false;
         lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);
+        director_hold_screensaver(false);
     }
     Serial.printf("{\"room\":\"%s\"}\n", on ? "on" : "off");
 }
@@ -234,8 +254,10 @@ static bool hit(int x, int y) {
     if (p) {
         x0 = off_x + p->x; y0 = off_y + p->y; x1 = x0 + p->w; y1 = y0 + p->h;
     } else {
-        x0 = off_x + FEET_X - ROOM_POSE_W / 2;
-        y0 = off_y + FEET_Y - ROOM_POSE_GROUND;
+        int fx, fy;
+        feet_for(brain.act, &fx, &fy);
+        x0 = off_x + fx - ROOM_POSE_W / 2;
+        y0 = off_y + fy - ROOM_POSE_GROUND;
         x1 = x0 + ROOM_POSE_W; y1 = y0 + ROOM_POSE_H;
     }
     return x >= x0 && x < x1 && y >= y0 && y < y1;

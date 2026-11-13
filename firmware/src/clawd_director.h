@@ -43,6 +43,11 @@ void director_tap(int x);
 // being here and dismisses an alert, but Clawd doesn't peek, so the hint
 // stays in view for the hold.
 void director_set_pairing_touch(bool on);
+// While on, the screensaver face never starts (nor comes back after an alert):
+// another page (the room, room.h) holds the screen. Turning it off restarts the
+// quiet time that brings the screensaver on. A screensaver already up is ended
+// by director_debug("home").
+void director_hold_screensaver(bool on);
 // A physical button press: you're here. `main_button` is BOOT, or the PWR
 // key on a board whose only button it is. On a board without a touchscreen
 // that press first dismisses an active alert and returns true (the caller

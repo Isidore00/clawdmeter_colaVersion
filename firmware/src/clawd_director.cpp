@@ -44,6 +44,7 @@ static bool     notice_wake = false;  // B_FACE_HOME: blink first (he noticed yo
 static bool     attention_on = false;
 static bool     attention_dismissed = false;  // ended here; the app hasn't heard
 static bool     pairing_touch = false;        // director_set_pairing_touch
+static bool     saver_held = false;           // director_hold_screensaver
 static uint32_t attention_since = 0;
 static bool     attn_anim_done = false;       // Clawd's part of the alert is over; it stays up
 static AttnFrom attn_from = ATTN_FROM_HOME;   // what it interrupted
@@ -116,7 +117,7 @@ static void arrive_meters(void) {
     if (attention_on) { go(B_ATTENTION); return; }
     if (resume_screensaver) {
         resume_screensaver = false;
-        if (!minimal && ui_meters_live()) { go(B_SCREENSAVER); return; }
+        if (!minimal && !saver_held && ui_meters_live()) { go(B_SCREENSAVER); return; }
     }
     mascot_return(-1, 150);
     go(B_CORNER);
@@ -268,6 +269,12 @@ void director_tap(int x) {
 }
 
 void director_set_pairing_touch(bool on) { pairing_touch = on; }
+
+void director_hold_screensaver(bool on) {
+    saver_held = on;
+    // Released: the quiet time starts over, so the face doesn't drop at once.
+    if (!on) engage();
+}
 
 bool director_button(bool main_button) {
     engage();
@@ -575,7 +582,7 @@ static void run_attention(uint32_t now) {
     if (mascot_in_attention() || mascot_busy()) return;
     if (resume_screensaver) {
         resume_screensaver = false;
-        if (!minimal && ui_meters_live()) { go(B_SCREENSAVER); return; }
+        if (!minimal && !saver_held && ui_meters_live()) { go(B_SCREENSAVER); return; }
     }
     if (mascot_away()) {              // was told to stay out, then you showed up
         mascot_return(-1, 150);
@@ -650,7 +657,7 @@ static void run_home(uint32_t now) {
     }
     const bool live = ui_meters_live();
     QuietInput q = { now, last_engagement, signals_hooks_seen(), window_not_started, live };
-    if (screensaver_ready(&q, &clawd_tuning())) { go(B_SCREENSAVER); return; }
+    if (!saver_held && screensaver_ready(&q, &clawd_tuning())) { go(B_SCREENSAVER); return; }
     if (live && signals_hooks_seen() && show_gate_ready(&show_gate, now, &clawd_tuning()))
         go(B_SHOW);
 }
