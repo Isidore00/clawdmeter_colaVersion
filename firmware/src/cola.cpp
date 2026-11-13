@@ -4,6 +4,7 @@
 
 #include "cola_policy.h"
 #include "cola_assets.h"      // the only include of the generated art
+#include "cola_lz4.h"
 #include "clawd_policy.h"     // the alert timeout the director's alert uses
 #include "ui.h"
 #include "hal/sound_hal.h"
@@ -40,6 +41,7 @@ static const uint16_t HOLD_MS[COLA_STATE_COUNT] = {
 
 static lv_obj_t*      img = NULL;
 static uint8_t*       buf = NULL;      // planar RGB565A8: colour plane, then alpha
+static uint8_t*       idx = NULL;      // the frame being drawn, decompressed palette indices
 static lv_image_dsc_t dsc;
 
 static ColaState state = COLA_IDLE;
@@ -66,12 +68,15 @@ static uint32_t  clip_at = 0;
 static void draw(void) {
     const cola_frame_t& f = cola_anims[state].frames[frame];
     const size_t n = (size_t)COLA_W * COLA_H;
+    // A frame that doesn't decode (it can't, short of corrupt flash) leaves
+    // the picture as it was.
+    if (!cola_lz4_decode(f.px, f.px_len, idx, n)) return;
     uint16_t* color = (uint16_t*)buf;
     uint8_t*  a = buf + n * 2;
     for (size_t i = 0; i < n; i++) {
-        const uint8_t idx = f.px[i];
-        color[i] = f.rgb[idx];
-        a[i] = f.alpha[idx];
+        const uint8_t p = idx[i];
+        color[i] = f.rgb[p];
+        a[i] = f.alpha[p];
     }
     lv_obj_invalidate(img);
 }
@@ -101,9 +106,10 @@ static void tap_cb(lv_event_t* e) {
 
 void cola_create(lv_obj_t* parent, int right, int bottom) {
     const size_t bytes = (size_t)COLA_W * COLA_H * 3;
-    buf = (uint8_t*)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM);
+    buf = (uint8_t*)heap_caps_malloc(bytes + (size_t)COLA_W * COLA_H, MALLOC_CAP_SPIRAM);
     if (!buf) { Serial.println("cola: no PSRAM for its frame, layer off"); return; }
     memset(buf, 0, bytes);
+    idx = buf + bytes;
 
     dsc.header.w = COLA_W;
     dsc.header.h = COLA_H;

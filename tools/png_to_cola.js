@@ -8,8 +8,11 @@
 //
 // Frames are stored one byte per pixel: an index into that frame's own palette
 // of up to 255 colours (RGB565 + 8-bit alpha); index 0 is transparent. A frame
-// with more colours than that is reduced by median cut. Sound is 16-bit mono
-// PCM at any rate the firmware can double up to the codec's (22050 Hz).
+// with more colours than that is reduced by median cut. Each frame's index
+// array is stored LZ4-block compressed (firmware/src/cola_lz4.cpp decodes it
+// into a scratch buffer when the frame is drawn); the palettes stay plain.
+// Sound is 16-bit mono PCM at any rate the firmware can double up to the
+// codec's (22050 Hz).
 //
 //   (cd tools && npm install --no-save pngjs)     # once
 //   node tools/png_to_cola.js
@@ -24,6 +27,63 @@ const STATES = ['idle', 'prompt', 'working', 'reply', 'low', 'empty', 'reset'];
 const MAX_COLORS = 255;
 const ALPHA_MIN = 8;          // below this a pixel is simply transparent
 const CLIP_MAX_S = 2.0;
+
+// LZ4 block format (greedy, one-entry hash table). The format needs the last 5
+// bytes to be literals and the last match to start 12+ bytes from the end.
+// Output is verified by decoding it again with lz4Decode below.
+function lz4Compress(src) {
+    const n = src.length, out = [];
+    const table = new Int32Array(1 << 14).fill(-1);
+    const hash = p => (((src[p] | (src[p + 1] << 8) | (src[p + 2] << 16) | (src[p + 3] << 24)) >>> 0) * 2654435761 >>> 18) & 0x3fff;
+    let anchor = 0;
+    const emit = (litEnd, matchLen, offset) => {
+        const lit = litEnd - anchor, ml = matchLen >= 0 ? matchLen - 4 : 0;
+        out.push((Math.min(lit, 15) << 4) | (matchLen >= 0 ? Math.min(ml, 15) : 0));
+        if (lit >= 15) { let r = lit - 15; while (r >= 255) { out.push(255); r -= 255; } out.push(r); }
+        for (let k = anchor; k < litEnd; k++) out.push(src[k]);
+        if (matchLen >= 0) {
+            out.push(offset & 255, offset >> 8);
+            if (ml >= 15) { let r = ml - 15; while (r >= 255) { out.push(255); r -= 255; } out.push(r); }
+        }
+    };
+    let i = 0;
+    while (i < n - 12) {
+        const h = hash(i), ref = table[h];
+        table[h] = i;
+        if (ref >= 0 && i - ref < 65536 && src[ref] === src[i] && src[ref + 1] === src[i + 1] &&
+            src[ref + 2] === src[i + 2] && src[ref + 3] === src[i + 3]) {
+            let m = 4;
+            while (i + m < n - 5 && src[ref + m] === src[i + m]) m++;
+            emit(i, m, i - ref);
+            i += m;
+            anchor = i;
+        } else {
+            i++;
+        }
+    }
+    emit(n, -1, 0);
+    return Uint8Array.from(out);
+}
+
+function lz4Decode(buf, n) {
+    const o = new Uint8Array(n);
+    let ip = 0, op = 0;
+    while (ip < buf.length) {
+        const t = buf[ip++];
+        let lit = t >> 4;
+        if (lit === 15) { let b; do { b = buf[ip++]; lit += b; } while (b === 255); }
+        for (let k = 0; k < lit; k++) o[op++] = buf[ip++];
+        if (ip >= buf.length) break;
+        const off = buf[ip] | (buf[ip + 1] << 8);
+        ip += 2;
+        let ml = t & 15;
+        if (ml === 15) { let b; do { b = buf[ip++]; ml += b; } while (b === 255); }
+        ml += 4;
+        for (let k = 0; k < ml; k++, op++) o[op] = o[op - off];
+    }
+    if (op !== n) throw new Error('lz4 round trip is the wrong length');
+    return o;
+}
 
 function rgb565(r, g, b) { return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3); }
 
@@ -126,7 +186,7 @@ const all = fs.readdirSync(SRC);
 const size = { w: 0, h: 0 };
 let out = '';
 const anims = [], clips = [];
-let frameBytes = 0, clipBytes = 0, frameCount = 0;
+let frameBytes = 0, clipBytes = 0, frameCount = 0, rawBytes = 0;
 
 for (const state of STATES) {
     const re = new RegExp(`^cola_${state}_(\\d+)\\.png$`);
@@ -138,11 +198,16 @@ for (const state of STATES) {
         const fr = convertFrame(path.join(SRC, f), size);
         if (fr.reduced) console.warn(`${f}: ${fr.reduced} colours reduced to ${MAX_COLORS}`);
         const sym = `cola_${state}_${i}`;
-        out += cArray('uint8_t', `${sym}_px`, fr.px, 40);
+        const lz = lz4Compress(fr.px);
+        const back = lz4Decode(lz, fr.px.length);
+        for (let k = 0; k < back.length; k++) if (back[k] !== fr.px[k]) throw new Error(`${f}: LZ4 round trip differs at ${k}`);
+        if (lz.length > 65535) throw new Error(`${f}: compressed to ${lz.length} B; cola_frame_t.px_len is 16 bits`);
+        rawBytes += fr.px.length;
+        out += cArray('uint8_t', `${sym}_px`, lz, 40);
         out += cArray('uint16_t', `${sym}_rgb`, fr.rgb.map(v => '0x' + v.toString(16).padStart(4, '0').toUpperCase()), 12);
         out += cArray('uint8_t', `${sym}_a`, fr.alpha, 24);
-        entries.push(`    { ${sym}_px, ${sym}_rgb, ${sym}_a }`);
-        frameBytes += fr.px.length + fr.rgb.length * 2 + fr.alpha.length;
+        entries.push(`    { ${sym}_px, ${lz.length}, ${sym}_rgb, ${sym}_a }`);
+        frameBytes += lz.length + fr.rgb.length * 2 + fr.alpha.length;
         frameCount++;
     });
     out += `static const cola_frame_t cola_${state}_frames[${files.length}] = {\n${entries.join(',\n')}\n};\n\n`;
@@ -172,10 +237,12 @@ const header = `// ============================================================
 #define COLA_H ${size.h}
 #define COLA_ANIM_COUNT ${STATES.length}
 
-// One frame: COLA_W x COLA_H palette indices, and that frame's palette
-// (index 0 is transparent).
+// One frame: COLA_W x COLA_H palette indices, LZ4-block compressed (px, px_len
+// bytes; cola_lz4_decode() gives COLA_W * COLA_H bytes), and that frame's
+// palette (index 0 is transparent).
 typedef struct {
     const uint8_t*  px;
+    uint16_t        px_len;
     const uint16_t* rgb;     // RGB565 per index
     const uint8_t*  alpha;   // 0..255 per index
 } cola_frame_t;
@@ -199,5 +266,5 @@ out += `// Indexed by ColaState (cola_policy.h).\n`;
 out += `static const cola_anim_t cola_anims[COLA_ANIM_COUNT] = {\n${anims.join('\n')}\n};\n\n`;
 out += `static const cola_clip_t cola_clips[COLA_ANIM_COUNT] = {\n${clips.join('\n')}\n};\n`;
 fs.writeFileSync(OUT, out);
-console.log(`${frameCount} frames at ${size.w}x${size.h} (${Math.round(frameBytes / 1024)} KB) and ` +
+console.log(`${frameCount} frames at ${size.w}x${size.h} (${Math.round(frameBytes / 1024)} KB, indices ${Math.round(rawBytes / 1024)} KB before LZ4) and ` +
             `${clips.filter(c => !c.includes('no sound')).length} clips (${Math.round(clipBytes / 1024)} KB) -> ${OUT}`);
