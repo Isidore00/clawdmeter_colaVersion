@@ -11,6 +11,7 @@
 #include "performer.h"
 #include "mascot.h"
 #include "cola.h"
+#include "room.h"
 #include "clawd_director.h"
 #include "usage_rate.h"
 #include "signals.h"
@@ -247,6 +248,13 @@ static void check_serial_cmd() {
                 const bool ok = director_debug(cmd_buf + 6);
                 Serial.printf("{\"clawd\":\"%s\",\"ok\":%s}\n", cmd_buf + 6, ok ? "true" : "false");
             }
+            else if (strncmp(cmd_buf, "room ", 5) == 0) {
+                // QA: the room page. `room on|off|auto|status|day|dusk|night`,
+                // `room <idle|game|drink|stretch|read|sleep|snack>` holds an act
+                // until `room auto`, `room poke [surprise|shy|angry]`. See room.h.
+                const bool ok = room_debug(cmd_buf + 5);
+                Serial.printf("{\"room_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 5, ok ? "true" : "false");
+            }
             else if (strncmp(cmd_buf, "cola ", 5) == 0) {
                 // QA: `cola <state>` holds a cola layer state, `cola auto` lets go.
                 const bool ok = cola_debug(cmd_buf + 5);
@@ -319,6 +327,7 @@ void setup() {
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging(), power_hal_is_vbus_in());
     director_init();    // rooms + beats; boots on the meters (home)
+    room_create(lv_screen_active());   // the room page, hidden; above everything the screen holds
     clawd_prefs_init();  // the saved device settings, before the app says otherwise
 
     Serial.printf("Dashboard ready (%s, %dx%d) %lu ms after boot, waiting for data on BLE...\n",
@@ -478,6 +487,7 @@ void loop() {
     performer_tick();
     mascot_tick();
     cola_tick();
+    room_tick();
     director_tick();
     if (director_take_dismissed()) ble_send_dismiss();
     // Rotation transition (blank + ramp) would fight the idle fade — skip
@@ -560,6 +570,15 @@ void loop() {
 
         pair_tick();
         touch_pair_tick();
+        {
+            // On the room page a tap is a poke, not "peek at the meters": the
+            // director's tap must not bring its face up over the room.
+            static bool room_was = false;
+            const bool rv = room_visible();
+            if (rv) director_set_pairing_touch(true);
+            else if (room_was) director_set_pairing_touch(false);
+            room_was = rv;
+        }
     }
 
     ble_state_t bs = ble_get_state();
@@ -630,6 +649,7 @@ void loop() {
             }
             if (usage.alert_clear) director_alert_clear();
             cola_on_payload(&usage, &sig);   // after the ding above: it goes first
+            room_on_payload(&usage);
             if (g_after != g_before)
                 Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
                     g_before, g_after, usage.session_pct);
