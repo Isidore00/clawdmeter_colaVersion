@@ -198,7 +198,7 @@ Project skills in `.claude/skills/`:
 - **可樂圖層**（用量頁）：`firmware/src/cola.cpp`，30 張動畫圖（160×160），素材在 `assets/cola/`，由 `tools/png_to_cola.js` 轉成 LZ4 壓縮的 `cola_assets.h`。語音（`cola_*.wav`）預設關，用 `COLA_VOICE` 打開。
 - **可樂的房間頁**：說明在 `docs/room-page.md`（左滑打開、戳她、摸頭、日夜、防烙印都寫在裡面）。只在 `-DCLAWD_COLA=1` 的環境編譯（AMOLED-2.16 和模擬器）。轉檔工具：`tools/room_convert.py`、`room_lz4.js`、`room_to_header.py`、`room_voice.py`。
 - **例外規則**：上面「Clawd 圖只能用官方動畫」是針對 Clawd。可樂的圖是主人自己用 AI 生的，可以放進 `assets/cola*`，但不要把可樂的圖混進 `research/clawd-official/`。
-- **生可樂的圖**：規則和提示詞都在 `docs/cola-art-prompts.md`（前綴、30 張小圖、房間頁每張的動作，都已從 `C:\可樂` 抄過來）；參考圖在 `assets/cola_ref/`。風格：淺灰背景、柔和半寫實畫風、附設定圖當參考。要產圖時直接從那份檔案複製提示詞，不要憑記憶寫。`C:\可樂` 那邊的規則有更新時，才去對照並同步。
+- **生可樂的圖**：規則和提示詞都在 `docs/cola-art-prompts.md`（前綴、30 張小圖、房間頁每張的動作，都已從 `C:\可樂` 抄過來）；參考圖在本機 `assets/cola_ref/`（不進 git，專案是公開的；搬電腦要自己帶，原檔在 `C:可樂ssets設定圖`）。風格：淺灰背景、柔和半寫實畫風、附設定圖當參考。要產圖時直接從那份檔案複製提示詞，不要憑記憶寫。`C:\可樂` 那邊的規則有更新時，才去對照並同步。
 
 ### 素材備份（重要）
 - `assets/cola_room_raw/`（30 張、約 46MB，房間頁原圖）和 `assets/cola_raw/` 還沒進 git。這是**唯一一份**，要另外備份（隨身碟或 Google Drive）。

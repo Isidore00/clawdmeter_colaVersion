@@ -17,3 +17,6 @@ tools/package-lock.json
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# 可樂設定圖（私人參考圖，不公開）
+assets/cola_ref/
