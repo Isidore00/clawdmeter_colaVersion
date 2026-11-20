@@ -10,8 +10,9 @@
 // only told to keep the screensaver face away (director_hold_screensaver).
 // Touch: a tap on her is a poke (1st within 10 s surprise, 2nd and 3rd shy,
 // later ones angry); a press held ~0.6 s on her head (top 30%), moved under
-// 20 px, is a head pat. A tap on the speaker badge in the top-left corner turns
-// her lines on or off (kept in NVS; `room voice on|off` does the same). A swipe left on the meters brings it up, a swipe right on the room goes
+// 20 px, is a head pat. A press held about a second on the floor or walls
+// (anywhere but her), or a tap on the speaker badge at the top centre, turns her
+// lines on or off (kept in NVS; `room voice on|off` does the same). A swipe left on the meters brings it up, a swipe right on the room goes
 // back.
 //
 // Memory: nothing is allocated until the page is first shown; then about

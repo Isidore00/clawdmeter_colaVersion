@@ -27,13 +27,17 @@
 static_assert(ROOM_VOICE_N == RV_COUNT, "room_voice_assets.h and RoomVoice drifted");
 #endif
 
-// The voice switch: a small speaker badge in the top-left corner of the page;
-// a tap on it turns her lines on or off, and the choice is kept in NVS
+// The voice switch: a small speaker badge at the top centre of the page; a tap
+// on it turns her lines on or off, and the choice is kept in NVS
 // (clawdmeter/room_voice, on by default). Room pixels, like everything here.
-#define VOICE_BTN_X    8
-#define VOICE_BTN_Y    8
+// At the centre, not a corner: on a unit measured with the touch x axis
+// mirrored against the picture, a corner badge was unreachable, and the centre
+// is the same either way.
+#define VOICE_BTN_X    218
+#define VOICE_BTN_Y    10
 #define VOICE_BTN_SIZE 44
 #define VOICE_BTN_HIT  64          // the tap area, a bit bigger than the badge
+#define VOICE_HOLD_MS  1000        // hold this long on empty floor or wall to switch it (see held_voice)
 
 // Where her feet are on the rug (room pixels, 480x480).
 #define FEET_X 240
@@ -107,6 +111,7 @@ static lv_indev_t* press_dev = NULL;
 static bool       pressing = false;
 static bool       hold_dead = false;         // moved too far, or already decided: no pat from this press
 static bool       hold_fired = false;        // this press made a pat: its release is nothing else
+static bool       vhold_dead = false;        // moved too far, or already decided: no voice switch from this press
 
 // Where her feet are for an act (room pixels).
 static void feet_for(RoomAct a, int* x, int* y) {
@@ -322,7 +327,7 @@ static void show(bool on) {
         shift_at = millis();
         apply_shift();
         apply_burnin(current_tone(), have_clock || tone_override >= 0);
-        pressing = hold_dead = hold_fired = false;
+        pressing = hold_dead = hold_fired = vhold_dead = false;
         refresh(current_tone());
         // Coming in: the morning line, once a day, and the night line at night.
         if (have_clock) {
@@ -429,7 +434,7 @@ static void indev_cb(lv_event_t* e) {
         press_ms = now;
         press_dev = dev;
         pressing = true;
-        hold_dead = hold_fired = false;
+        hold_dead = hold_fired = vhold_dead = false;
         return;
     }
     pressing = false;
@@ -555,6 +560,26 @@ static void held_pat(uint32_t now) {
     }
 }
 
+// A press held VOICE_HOLD_MS anywhere that isn't her, without moving, turns
+// her lines on or off. It doesn't depend on where the finger lands, so it works
+// however the board is turned (a corner badge was out of reach on a rotated
+// unit).
+static void held_voice(uint32_t now) {
+    if (!pressing || vhold_dead || !press_dev) return;
+    lv_point_t p = press_pt;
+    lv_indev_get_point(press_dev, &p);
+    if (abs(p.x - press_pt.x) > PAT_MAX_MOVE || abs(p.y - press_pt.y) > PAT_MAX_MOVE) {
+        vhold_dead = true;
+        return;
+    }
+    if ((uint32_t)(now - press_ms) < VOICE_HOLD_MS) return;
+    vhold_dead = true;
+    if (!hit(press_pt.x, press_pt.y)) {
+        hold_fired = true;
+        voice_set(!voice_on);
+    }
+}
+
 void room_tick(void) {
     if (!root || !visible || idle_is_asleep()) return;
     const RoomTone tone = current_tone();
@@ -563,6 +588,7 @@ void room_tick(void) {
     in.tone = tone;
     in.force = forced;
     held_pat(in.now);
+    held_voice(in.now);
     if (tone != TONE_NIGHT) night_said = false;
     // A poke or pat asked for: which reaction, and its line. Not while she is
     // being patted. A touch poke (kind -1) goes by the pokes in the last 10 s.
