@@ -20,6 +20,9 @@ static uint8_t  fade_to   = 0;
 static uint8_t  awake_brightness = DISPLAY_DEFAULT_BRIGHTNESS;  // user-set "full" level (brightness.cpp)
 static uint8_t  awake_scale_pct = 100;                          // a page dims the awake level (idle_set_awake_scale)
 static bool     sleep_on_usb = false;                           // sleep even on USB power (idle_set_sleep_on_usb)
+static bool     remind_hold = false;                            // a reminder holds the panel on (idle_remind_begin)
+static bool     remind_woke = false;                            // ...and woke it: nobody was here
+static uint8_t  remind_presses = 0;                             // presses since it woke the panel
 
 // What "awake" means: the user's level, scaled. Never 0 while the level isn't,
 // so a dimmed panel stays on.
@@ -66,7 +69,32 @@ void idle_set_sleep_on_usb(bool on) { sleep_on_usb = on; }
 
 bool idle_get_sleep_on_usb(void) { return sleep_on_usb; }
 
+void idle_remind_begin(void) {
+    remind_hold = true;
+    remind_presses = 0;
+    if (state == STATE_ASLEEP || state == STATE_FADING_OUT) {
+        begin_fade(awake_level(), millis());
+        state = STATE_FADING_IN;
+        remind_woke = true;
+    } else {
+        remind_woke = false;
+    }
+}
+
+void idle_remind_end(bool acked) {
+    if (!remind_hold) return;
+    remind_hold = false;
+    if (!remind_woke) return;
+    remind_woke = false;
+    const uint32_t now = millis();
+    if (acked && remind_presses <= 1)
+        last_activity_ms = now - IDLE_TIMEOUT_MS + IDLE_REMIND_ACK_MS;
+    else if (!acked && remind_presses == 0)
+        last_activity_ms = now - IDLE_TIMEOUT_MS;
+}
+
 void idle_note_activity(void) {
+    if (remind_hold) remind_woke = false;   // you're here: the usual timeout from now
     last_activity_ms = millis();
     if (state == STATE_FADING_IN) return;
     if (state == STATE_AWAKE) return;
@@ -90,6 +118,7 @@ bool idle_consume_wake_press(void) {
         last_activity_ms = millis();
         return true;
     }
+    if (remind_hold && remind_woke && remind_presses < 255) remind_presses++;
     last_activity_ms = millis();
     return false;
 }
@@ -113,7 +142,7 @@ void idle_tick(void) {
 
     switch (state) {
     case STATE_AWAKE:
-        if (now - last_activity_ms >= IDLE_TIMEOUT_MS) {
+        if (!remind_hold && now - last_activity_ms >= IDLE_TIMEOUT_MS) {
             begin_fade(0, now);
             state = STATE_FADING_OUT;
         }

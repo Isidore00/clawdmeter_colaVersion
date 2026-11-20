@@ -23,6 +23,16 @@ uint8_t idle_get_awake_scale(void);
 void idle_set_sleep_on_usb(bool on);
 bool idle_get_sleep_on_usb(void);
 
+// A reminder (reminder.h) holds the panel on while it runs, without counting
+// as you being here: a dark panel fades in, and the idle timeout doesn't run
+// out under it. idle_remind_end() lets go. If the reminder woke the panel and
+// nothing but one press (the tap that answered it, `acked`) came since, it
+// goes dark again: IDLE_REMIND_ACK_MS after an answer, at once if nobody
+// answered. Any other activity meanwhile (another press, a prompt) keeps it
+// awake the usual way.
+void idle_remind_begin(void);
+void idle_remind_end(bool acked);
+
 // Returns true if this press was consumed as a wake-up (caller MUST skip the
 // button's normal action). Returns false when already awake — also notes the
 // activity, so callers don't need a separate idle_note_activity() call.

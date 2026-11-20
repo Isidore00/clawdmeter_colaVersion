@@ -3,7 +3,13 @@
 // Auto-sleep / idle screen-off configuration.
 // All tunables live here so nothing is hard-coded in main.cpp / idle.cpp.
 
+// The cola builds (-DCLAWD_COLA=1) sleep sooner, and on USB power too: their
+// face can stay up for long stretches, so the AMOLED gets its rest.
+#if CLAWD_COLA
+#define IDLE_TIMEOUT_MS             (10UL * 60UL * 1000UL)  // 10 min
+#else
 #define IDLE_TIMEOUT_MS             (30UL * 60UL * 1000UL)  // 30 min
+#endif
 #define IDLE_FADE_OUT_MS            400      // fade-to-black duration
 #define IDLE_FADE_IN_MS             180      // wake fade-in (snappier)
 #define IDLE_FADE_STEP_MS           20       // tick interval per fade step
@@ -14,7 +20,16 @@
 // wakes from sleep when USB is plugged back in). Useful when sitting on a
 // desk plugged in — also covers battery-less hardware that's always on USB.
 // Set true to sleep regardless of power source.
+#if CLAWD_COLA
+#define IDLE_SLEEP_WHEN_CHARGING    true
+#else
 #define IDLE_SLEEP_WHEN_CHARGING    false
+#endif
+
+// A reminder (reminder.h) wakes a dark panel without counting as you being
+// here. Nobody taps it: dark again when it ends. A tap that only answers it:
+// dark again this long after (the face blinks back at you first).
+#define IDLE_REMIND_ACK_MS          3000
 
 // When true, a touch on the dark panel wakes the device (first touch is
 // consumed for wake only, second touch acts normally). When false, touch is
