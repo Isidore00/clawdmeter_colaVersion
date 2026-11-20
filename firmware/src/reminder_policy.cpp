@@ -49,7 +49,7 @@ long reminder_next_epoch(const ReminderProgram* p, long epoch_s) {
     return -1;
 }
 
-void reminder_clock_init(ReminderClock* c) { c->slot = -1; }
+void reminder_clock_init(ReminderClock* c) { c->slot = -1; c->fired = -1; }
 
 bool reminder_clock_due(ReminderClock* c, const ReminderProgram* p, long epoch_s) {
     const long slot = reminder_slot(p, epoch_s);
@@ -57,7 +57,9 @@ bool reminder_clock_due(ReminderClock* c, const ReminderProgram* p, long epoch_s
     if (slot == c->slot) return false;
     const bool forward = slot > c->slot;
     c->slot = slot;
-    return forward && reminder_slot_in_window(p, slot);
+    if (!forward || slot == c->fired || !reminder_slot_in_window(p, slot)) return false;
+    c->fired = slot;
+    return true;
 }
 
 int reminder_water_pct(uint32_t ms, uint32_t total_ms) {

@@ -43,7 +43,8 @@ static void test_tracker(void) {
     TEST_ASSERT_TRUE(reminder_clock_due(&c, p, MON_0800 + 15 * 60));     // 08:15
     TEST_ASSERT_FALSE(reminder_clock_due(&c, p, MON_0800 + 15 * 60 + 30)); // once per slot
     TEST_ASSERT_FALSE(reminder_clock_due(&c, p, MON_0800 + 5 * 60));     // clock went back: no fire
-    TEST_ASSERT_TRUE(reminder_clock_due(&c, p, MON_0800 + 15 * 60));     // forward again
+    TEST_ASSERT_FALSE(reminder_clock_due(&c, p, MON_0800 + 15 * 60));    // forward again: 08:15 already rang
+    TEST_ASSERT_TRUE(reminder_clock_due(&c, p, MON_0800 + 30 * 60));     // 08:30
 
     reminder_clock_init(&c);
     TEST_ASSERT_FALSE(reminder_clock_due(&c, p, MON_0759));

@@ -14,7 +14,9 @@ Settings are fixed in the firmware for now (`REMINDER_PROGRAMS`,
 
 ## How it works
 
-- **Clock**: the app's local epoch `t` (`docs/protocol.md`). The day and minute
+- **Clock**: the app's local epoch `t` (`docs/protocol.md`). The app sends it
+  only while its **Clock** setting is on (Auto, 12 h or 24 h; the default is
+  Off), so turn it on or no reminder ever fires. The day and minute
   come straight from it and the board keeps counting between payloads. Before
   the first `t` since boot there are no reminders. A program fires on its
   period's boundaries counted from midnight (`:00 :15 :30 :45`), once per
@@ -48,7 +50,8 @@ Settings are fixed in the firmware for now (`REMINDER_PROGRAMS`,
   minutes and stay on while plugged in.
 - The face is the resting screen: it comes up after **30 s** of quiet, with
   or without the app connected (`face_without_link`), and a peek stays up
-  until you tap it. Not on the room page.
+  until you tap it. Not on the room page. With no app it covers the pairing
+  hint until you tap it.
 - The face's eyes (and the glass and the sign) drift one step round a small
   ring once a minute while it's up, against burn-in.
 

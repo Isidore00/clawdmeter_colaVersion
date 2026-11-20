@@ -568,10 +568,8 @@ void loop() {
             if (secondary_now != secondary_was) {
                 if (secondary_now) {
                     if (idle_consume_wake_press()) secondary_wake_swallowed = true;
-                    else {
-                        button_run_press(BTN_SLOT_SECONDARY, &secondary_run, button_action_get(BTN_SLOT_SECONDARY), true);
-                        director_button(false);
-                    }
+                    else if (director_button(false)) secondary_wake_swallowed = true;   // it answered a reminder
+                    else button_run_press(BTN_SLOT_SECONDARY, &secondary_run, button_action_get(BTN_SLOT_SECONDARY), true);
                 } else {
                     if (secondary_wake_swallowed) secondary_wake_swallowed = false;
                     else                          button_run_release(BTN_SLOT_SECONDARY, &secondary_run);

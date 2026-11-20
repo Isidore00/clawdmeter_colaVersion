@@ -42,12 +42,12 @@ static void show(bool on) {
 }
 
 static void start(int prog) {
-    if (active) show(false);
+    if (active) show(false);              // one up already: this one takes over, the panel hold stays
+    else        idle_remind_begin();
     active = true;
     active_prog = prog;
     started_ms = millis();
     voice_pending = true;
-    idle_remind_begin();
     sound_hal_chime();
     show(true);
     Serial.printf("[%lu] reminder: %s\n", (unsigned long)started_ms, REMINDER_PROGRAMS[prog].name);
@@ -65,6 +65,12 @@ static void end(bool acked) {
 
 void reminder_on_payload(const UsageData* d) {
     if (d->clock_epoch <= 0) return;
+    // Each payload's `t` is whole seconds, sent a moment before it lands: a
+    // step back of a second or two is that lag, not a new time. Keep ours.
+    if (have_clock) {
+        const long back = clock_now_s() - d->clock_epoch;
+        if (back > 0 && back <= 5) return;
+    }
     have_clock = true;
     clock_epoch = d->clock_epoch;
     clock_ms = millis();
@@ -90,7 +96,9 @@ void reminder_tick(void) {
         // The screen changed under it (a swipe): it follows.
         if (room_visible() != on_room) {
             show(false);
-            show(true);
+            on_room = room_visible();
+            if (on_room) room_remind(true);
+            else director_remind(true, REMIND_SHOW_MS - (now - started_ms));   // the glass drains over what's left
         }
         if ((uint32_t)(now - started_ms) >= REMIND_SHOW_MS) end(false);
     }

@@ -77,7 +77,6 @@ static ClawdRng    rng;
 // A reminder (director_remind)
 static bool        remind_on = false;         // the reminder still wants him drinking
 static uint32_t    remind_ms = 0;             // how long it runs (the water goes down over it)
-static Beat        remind_prev = B_HOME;      // the beat it interrupted
 
 // The touch: a press becomes a tap on release, unless it moved (a swipe) or
 // was held (director_set_long_press).
@@ -85,6 +84,7 @@ static Beat        remind_prev = B_HOME;      // the beat it interrupted
 #define LONG_PRESS_MS     1000
 static bool        press_on = false;
 static bool        press_dead = false;        // moved, or the long press fired: no tap
+static bool        press_saw_remind = false;  // a reminder was up when the press began
 static lv_point_t  press_at = { 0, 0 };
 static uint32_t    press_ms = 0;
 static bool      (*long_press_cb)(void) = NULL;
@@ -304,7 +304,10 @@ void director_hold_screensaver(bool on) {
 
 bool director_button(bool main_button) {
     engage();
-    if (reminder_active()) reminder_ack();    // you're here: that answers it too
+    if (reminder_active()) {                  // you're here: that answers it, and is the whole press
+        reminder_ack();
+        return true;
+    }
     if (main_button && attention_on && !board_caps().has_touch) {
         end_attention(ATTN_END_TAP);          // nothing to tap: BOOT dismisses it
         return true;
@@ -329,33 +332,42 @@ void director_set_liveliness(int level) {
 
 // A press counts as you being here at once; it's a tap when it lifts, if it
 // stayed put and wasn't a long press. So a swipe (a page change) is never a
-// tap, and a hold doesn't drop the face before it's known to be one.
+// tap, and a hold doesn't drop the face before it's known to be one. LVGL 9
+// hands an indev callback only PRESSED and RELEASED (not PRESSING), so the
+// hold and the drift are watched from director_tick (press_tick).
+static bool press_moved(const lv_point_t& p) {
+    return abs((int)(p.x - press_at.x)) > TAP_MOVE_MAX_PX || abs((int)(p.y - press_at.y)) > TAP_MOVE_MAX_PX;
+}
+
 static void indev_cb(lv_event_t* e) {
     lv_point_t p = { 0, 0 };
     if (touch_indev) lv_indev_get_point(touch_indev, &p);
     const int code = (int)lv_event_get_code(e);
-    const uint32_t now = now_ms();
     if (code == LV_EVENT_PRESSED) {
         press_on = true;
         press_dead = false;
+        press_saw_remind = reminder_active();
         press_at = p;
-        press_ms = now;
+        press_ms = now_ms();
         engage();
         return;
     }
-    if (!press_on) return;
-    const bool moved = abs((int)(p.x - press_at.x)) > TAP_MOVE_MAX_PX || abs((int)(p.y - press_at.y)) > TAP_MOVE_MAX_PX;
-    if (code == LV_EVENT_PRESSING) {
-        if (press_dead) return;
-        if (moved) { press_dead = true; return; }
-        if ((uint32_t)(now - press_ms) >= LONG_PRESS_MS) {
-            press_dead = true;                    // a hold: never a tap, whatever the callback says
-            if (long_press_cb) long_press_cb();
-        }
-        return;
-    }
-    press_on = false;                             // released, or lost
-    if (code == LV_EVENT_RELEASED && !press_dead && !moved) director_tap(press_at.x);
+    if (code != LV_EVENT_RELEASED || !press_on) return;
+    press_on = false;
+    if (press_dead || press_moved(p)) return;
+    // A press already down when a reminder came up doesn't answer it unseen.
+    if (!press_saw_remind && reminder_active()) return;
+    director_tap(press_at.x);
+}
+
+static void press_tick(uint32_t now) {
+    if (!press_on || press_dead || !touch_indev) return;
+    lv_point_t p = { 0, 0 };
+    lv_indev_get_point(touch_indev, &p);
+    if (press_moved(p)) { press_dead = true; return; }
+    if ((uint32_t)(now - press_ms) < LONG_PRESS_MS) return;
+    press_dead = true;                            // a hold: never a tap, whatever the callback says
+    if (long_press_cb) long_press_cb();
 }
 
 void director_set_long_press(bool (*cb)(void)) { long_press_cb = cb; }
@@ -374,7 +386,6 @@ void director_remind(bool on, uint32_t ms) {
     if (minimal || attention_on) return;          // the ding (and her line) alone
     remind_on = true;
     remind_ms = ms;
-    if (beat != B_REMIND) remind_prev = beat;
     react_anim = NULL;
     joy_pending = false;
     resume_screensaver = false;
@@ -460,9 +471,7 @@ void director_init(void) {
     touch_indev = lv_indev_get_next(NULL);
     if (touch_indev) {
         lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_PRESSED, NULL);
-        lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_PRESSING, NULL);
         lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_RELEASED, NULL);
-        lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_PRESS_LOST, NULL);
     }
 }
 
@@ -730,16 +739,17 @@ static void run_remind(uint32_t now) {
         if (face_moving()) return;                // a rise lands as up, a drop as gone
         if (face_visible()) { step = 3; return; }
         if (performing) {
-            if (remind_prev != B_RUN_HOME) performer_release();
+            performer_release();                  // a show, or one already being stopped
             next_step(200);
             return;
         }
+        if (mascot_in_attention()) return;        // the alert's big Clawd is still leaving
         if (!mascot_away()) mascot_leave(PEEK_LEAVE_PCT);
         step = 2;
         return;
     case 1:  // the scene let go: he runs off
         if (!settled(now)) return;
-        if (remind_prev != B_RUN_HOME) performer_run_off(PERFORMER_LEFT, 150, 300, 400);
+        performer_run_off(PERFORMER_LEFT, 150, 300, 400);
         step = 2;
         return;
     case 2:  // nobody's out: up comes the face
@@ -765,8 +775,10 @@ static void run_remind(uint32_t now) {
         if (face_visible() && t.screensaver && !saver_held && face_ok()) {
             go(B_SCREENSAVER);
             step = 2;                             // already up: straight to resting
-        } else {
+        } else if (face_visible()) {
             to_meters(false);
+        } else {
+            arrive_meters();                      // nothing up to drop: he walks home
         }
         return;
     }
@@ -807,6 +819,7 @@ void director_tick(void) {
     show_gate_update(&show_gate, now, activity, &clawd_tuning());
     // Tool calls flowing (PostToolUse) are hook events too: you're working.
     if (activity > 0) last_engagement = now;
+    press_tick(now);
     face_tick();
 
     switch (beat) {

@@ -454,7 +454,8 @@ static void indev_cb(lv_event_t* e) {
         if (!visible && dx < 0) show(true);
         else if (visible && dx > 0) show(false);
     } else if (visible && abs(dx) <= TAP_MAX_MOVE && abs(dy) <= TAP_MAX_MOVE && dt <= TAP_MAX_MS) {
-        if (press_in_remind || remind_on) reminder_ack();   // answers it: no poke (the director may have already)
+        if (press_in_remind) reminder_ack();       // answers it: no poke (the director may have already)
+        else if (remind_on) {}                     // a press from before it came up: nothing
         else if (voice_hit(press_pt.x, press_pt.y)) voice_set(!voice_on);
         else if (hit(press_pt.x, press_pt.y)) { poke_pending = true; poke_kind = -1; }
     }

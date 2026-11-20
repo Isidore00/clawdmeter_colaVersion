@@ -83,6 +83,13 @@ static uint8_t glyph[2] = { GL_OPEN, GL_OPEN };
 // Burn-in drift (face_drift_for_step): the eyes, the glass and the sign sit
 // this far off their places; one step round the ring every DRIFT_MS while up.
 #define DRIFT_MS 60000
+// The drift, the glass and the sign belong to the cola builds (-DCLAWD_COLA=1),
+// whose face stays up for long stretches; other boards keep the face as it was.
+#if CLAWD_COLA
+#define FACE_EXTRAS 1
+#else
+#define FACE_EXTRAS 0
+#endif
 static int      drift_x = 0, drift_y = 0;
 static unsigned drift_step = 0;
 static uint32_t drift_at = 0;
@@ -492,8 +499,10 @@ void face_init(void) {
         layout_glyph(e, GL_OPEN);              // the cells hide until a shape wants them
         eye_last[e] = { INT32_MIN, 0, box_w0, box_h0, -1, -1, false, GL_OPEN };   // forces the first placement
     }
-    make_cup();
-    make_sign();
+    if (FACE_EXTRAS) {
+        make_cup();
+        make_sign();
+    }
     pose = gone_pose();
     place_eyes(0);
     clawd_rng_seed(&rng, millis() ^ 0xFACE);
@@ -722,7 +731,7 @@ void face_tick(void) {
     sign_tick(now);
     if (!visible) return;
 
-    if (!moving && (uint32_t)(now - drift_at) >= DRIFT_MS) {
+    if (FACE_EXTRAS && !moving && (uint32_t)(now - drift_at) >= DRIFT_MS) {
         drift_at = now;
         drift_step++;
         const int unit = geom.cell / 2 > 0 ? geom.cell / 2 : 1;
@@ -786,7 +795,7 @@ bool face_debug(const char* what) {
 void face_drink(bool on, uint32_t ms) {
     if (!root) return;
     if (!on) { drink_off(); return; }
-    if (!visible || moving) return;
+    if (!cup || !visible || moving) return;
     blink_phase = 0;
     expr_clear();
     lv_anim_delete(&glance_cur, NULL);

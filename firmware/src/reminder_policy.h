@@ -49,9 +49,11 @@ long reminder_next_epoch(const ReminderProgram* p, long epoch_s);
 // The slot tracker: feed it the clock; it says when a program is due. The
 // first reading only sets the slot (a clock that arrives at 10:07 waits for
 // 10:15). A clock that jumps back (a new `t` from the app) is just a new
-// reading.
+// reading, and a slot never fires twice in a row (a clock that wobbles back
+// over a boundary and forward again).
 struct ReminderClock {
     long slot;     // last slot seen, -1 before the first reading
+    long fired;    // last slot that fired, -1 for none
 };
 void reminder_clock_init(ReminderClock* c);
 bool reminder_clock_due(ReminderClock* c, const ReminderProgram* p, long epoch_s);
