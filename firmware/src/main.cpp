@@ -12,6 +12,7 @@
 #include "mascot.h"
 #include "cola.h"
 #include "room.h"
+#include "reminder.h"
 #include "clawd_director.h"
 #include "usage_rate.h"
 #include "signals.h"
@@ -115,6 +116,21 @@ static void my_touch_cb(lv_indev_t* indev, lv_indev_data_t* data) {
         data->state = LV_INDEV_STATE_RELEASED;
     }
 }
+
+#if CLAWD_COLA
+// A press held about a second on the meters or the face (director_set_long_press)
+// turns her lines on or off, the room page's switch, and the face holds up a
+// sign saying which. The room page has its own hold (not on her); a board
+// whose touch hold re-pairs keeps that while the hint is up.
+static bool voice_long_press(void) {
+    if (room_visible()) return false;
+    if (!board_caps().has_pwr_button && ui_pair_hint_visible()) return false;
+    const bool on = !room_voice_on();
+    room_voice_set(on);
+    director_voice_sign(on);
+    return true;
+}
+#endif
 
 // Parse a JSON line into UsageData (payload.cpp holds the pure parser).
 static bool parse_json(const char* json, UsageData* out) {
@@ -261,6 +277,11 @@ static void check_serial_cmd() {
                 const bool ok = room_debug(cmd_buf + 5);
                 Serial.printf("{\"room_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 5, ok ? "true" : "false");
             }
+            else if (strncmp(cmd_buf, "remind ", 7) == 0) {
+                // QA: `remind water` (that reminder now), `remind stop`, `remind status`. See reminder.h.
+                const bool ok = reminder_debug(cmd_buf + 7);
+                Serial.printf("{\"remind_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 7, ok ? "true" : "false");
+            }
             else if (strncmp(cmd_buf, "cola ", 5) == 0) {
                 // QA: `cola <state>` holds a cola layer state, `cola auto` lets go.
                 const bool ok = cola_debug(cmd_buf + 5);
@@ -334,6 +355,9 @@ void setup() {
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging(), power_hal_is_vbus_in());
     director_init();    // rooms + beats; boots on the meters (home)
     room_create(lv_screen_active());   // the room page, hidden; above everything the screen holds
+#if CLAWD_COLA
+    director_set_long_press(voice_long_press);   // a hold on the meters or the face: her voice switch
+#endif
     clawd_prefs_init();  // the saved device settings, before the app says otherwise
 
     Serial.printf("Dashboard ready (%s, %dx%d) %lu ms after boot, waiting for data on BLE...\n",
@@ -494,6 +518,7 @@ void loop() {
     mascot_tick();
     cola_tick();
     room_tick();
+    reminder_tick();
     director_tick();
     if (director_take_dismissed()) ble_send_dismiss();
     // Rotation transition (blank + ramp) would fight the idle fade — skip
@@ -656,6 +681,7 @@ void loop() {
             if (usage.alert_clear) director_alert_clear();
             cola_on_payload(&usage, &sig);   // after the ding above: it goes first
             room_on_payload(&usage);
+            reminder_on_payload(&usage);
             if (g_after != g_before)
                 Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
                     g_before, g_after, usage.session_pct);

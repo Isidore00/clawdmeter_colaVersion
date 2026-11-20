@@ -9,6 +9,7 @@
 #include "minimal_mode.h"
 #include "hal/board_caps.h"
 #include "usage_rate.h"
+#include "reminder.h"
 #include <Arduino.h>
 #include <lvgl.h>
 #include <string.h>
@@ -29,9 +30,11 @@ enum Beat {
     B_RUN_HOME,      // the performance stops, he runs off, the corner walks home
     B_ATTENTION,     // the big Clawd fetches you
     B_PEEK,          // a tap on the meters: hop, duck out, the face comes up curious for a while
+    B_REMIND,        // a reminder: he heads out, the face comes up and drinks, then rests
 };
 static const char* const BEAT_NAMES[] = {
     "home", "corner", "show", "screensaver", "face-home", "run-home", "attention", "peek",
+    "remind",
 };
 
 static Beat     beat = B_HOME;
@@ -71,6 +74,21 @@ static bool        minimal = false;
 static ClawdRng    rng;
 
 // A tap on the meters (the aquarium)
+// A reminder (director_remind)
+static bool        remind_on = false;         // the reminder still wants him drinking
+static uint32_t    remind_ms = 0;             // how long it runs (the water goes down over it)
+static Beat        remind_prev = B_HOME;      // the beat it interrupted
+
+// The touch: a press becomes a tap on release, unless it moved (a swipe) or
+// was held (director_set_long_press).
+#define TAP_MOVE_MAX_PX   24
+#define LONG_PRESS_MS     1000
+static bool        press_on = false;
+static bool        press_dead = false;        // moved, or the long press fired: no tap
+static lv_point_t  press_at = { 0, 0 };
+static uint32_t    press_ms = 0;
+static bool      (*long_press_cb)(void) = NULL;
+
 static int         peek_x = 0;                // where the peek's tap landed
 static uint32_t    peek_up_at = 0;            // the peek's face started rising
 static lv_indev_t* touch_indev = NULL;
@@ -102,6 +120,10 @@ static bool settled(uint32_t now) {
 
 static void engage(void) { last_engagement = now_ms(); }
 
+// The face may come up (and stay): live data on the meters, or a build whose
+// face is the resting screen with or without the app (face_without_link).
+static bool face_ok(void) { return clawd_tuning().face_without_link || ui_meters_live(); }
+
 // The performer walks on from the left edge, where the corner Clawd just
 // left (one Clawd: only once he's away and no face is up).
 static void perform_enter(uint16_t speed_pct) {
@@ -117,7 +139,7 @@ static void arrive_meters(void) {
     if (attention_on) { go(B_ATTENTION); return; }
     if (resume_screensaver) {
         resume_screensaver = false;
-        if (!minimal && !saver_held && ui_meters_live()) { go(B_SCREENSAVER); return; }
+        if (!minimal && !saver_held && face_ok()) { go(B_SCREENSAVER); return; }
     }
     mascot_return(-1, 150);
     go(B_CORNER);
@@ -247,6 +269,10 @@ static void tap_home(int x) {
 
 void director_tap(int x) {
     engage();
+    if (reminder_active()) {                      // a tap answers a reminder, and does nothing else
+        reminder_ack();
+        if (!attention_on) return;
+    }
     if (attention_on) { end_attention(ATTN_END_TAP); return; }   // a dismissing tap does nothing else
     resume_screensaver = false;                   // "show me the meters" wins
     if (minimal) return;
@@ -278,6 +304,7 @@ void director_hold_screensaver(bool on) {
 
 bool director_button(bool main_button) {
     engage();
+    if (reminder_active()) reminder_ack();    // you're here: that answers it too
     if (main_button && attention_on && !board_caps().has_touch) {
         end_attention(ATTN_END_TAP);          // nothing to tap: BOOT dismisses it
         return true;
@@ -300,11 +327,58 @@ void director_set_liveliness(int level) {
     mascot_autonomy(beat == B_HOME && !minimal && t.idle_acts);
 }
 
+// A press counts as you being here at once; it's a tap when it lifts, if it
+// stayed put and wasn't a long press. So a swipe (a page change) is never a
+// tap, and a hold doesn't drop the face before it's known to be one.
 static void indev_cb(lv_event_t* e) {
-    (void)e;
     lv_point_t p = { 0, 0 };
     if (touch_indev) lv_indev_get_point(touch_indev, &p);
-    director_tap(p.x);
+    const int code = (int)lv_event_get_code(e);
+    const uint32_t now = now_ms();
+    if (code == LV_EVENT_PRESSED) {
+        press_on = true;
+        press_dead = false;
+        press_at = p;
+        press_ms = now;
+        engage();
+        return;
+    }
+    if (!press_on) return;
+    const bool moved = abs((int)(p.x - press_at.x)) > TAP_MOVE_MAX_PX || abs((int)(p.y - press_at.y)) > TAP_MOVE_MAX_PX;
+    if (code == LV_EVENT_PRESSING) {
+        if (press_dead) return;
+        if (moved) { press_dead = true; return; }
+        if ((uint32_t)(now - press_ms) >= LONG_PRESS_MS) {
+            press_dead = true;                    // a hold: never a tap, whatever the callback says
+            if (long_press_cb) long_press_cb();
+        }
+        return;
+    }
+    press_on = false;                             // released, or lost
+    if (code == LV_EVENT_RELEASED && !press_dead && !moved) director_tap(press_at.x);
+}
+
+void director_set_long_press(bool (*cb)(void)) { long_press_cb = cb; }
+
+void director_voice_sign(bool sound_on) {
+    if (minimal) return;
+    engage();
+    // On the meters he comes up to hold it (the peek); the sign waits for him.
+    if (!face_visible() && (beat == B_HOME || beat == B_CORNER) && !pairing_touch)
+        tap_home(lv_display_get_horizontal_resolution(NULL) / 2);
+    face_show_sign(sound_on);
+}
+
+void director_remind(bool on, uint32_t ms) {
+    if (!on) { remind_on = false; return; }
+    if (minimal || attention_on) return;          // the ding (and her line) alone
+    remind_on = true;
+    remind_ms = ms;
+    if (beat != B_REMIND) remind_prev = beat;
+    react_anim = NULL;
+    joy_pending = false;
+    resume_screensaver = false;
+    go(B_REMIND);
 }
 
 void director_on_payload(const UsageData* d, const SignalsUpdate* sig) {
@@ -384,7 +458,12 @@ void director_init(void) {
     // Every press on the panel, wherever it lands, is a tap for the
     // director. PRESSED (not CLICKED) so the reaction starts on the next frame.
     touch_indev = lv_indev_get_next(NULL);
-    if (touch_indev) lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_PRESSED, NULL);
+    if (touch_indev) {
+        lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_PRESSED, NULL);
+        lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_PRESSING, NULL);
+        lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_RELEASED, NULL);
+        lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_PRESS_LOST, NULL);
+    }
 }
 
 DirectorRoom director_room(void) { return face_visible() ? ROOM_FACE : ROOM_METERS; }
@@ -459,7 +538,7 @@ static uint32_t calm_at = 0;
 
 static void run_screensaver(uint32_t now) {
     const ClawdTuning& t = clawd_tuning();
-    if (!ui_meters_live()) { to_meters(false); return; }   // link dropped: show the hint
+    if (!face_ok()) { to_meters(false); return; }   // link dropped: show the hint
     if (step == 3) {
         // Resting: dip into a calm performance now and then (also breaks up
         // the flat orange field for burn-in). One Clawd: the face drops onto
@@ -582,7 +661,7 @@ static void run_attention(uint32_t now) {
     if (mascot_in_attention() || mascot_busy()) return;
     if (resume_screensaver) {
         resume_screensaver = false;
-        if (!minimal && !saver_held && ui_meters_live()) { go(B_SCREENSAVER); return; }
+        if (!minimal && !saver_held && face_ok()) { go(B_SCREENSAVER); return; }
     }
     if (mascot_away()) {              // was told to stay out, then you showed up
         mascot_return(-1, 150);
@@ -634,6 +713,66 @@ static void run_peek(uint32_t now) {
     }
 }
 
+// A reminder on the meters (director_remind). One Clawd: whoever is out
+// leaves first (the performer runs off, the corner Clawd ducks out), then the
+// face comes up, or is already up, and drinks until the reminder ends. Then
+// a blink, and he rests on the glass as the screensaver (or goes home when
+// the screensaver is off or can't run).
+static void run_remind(uint32_t now) {
+    if (!remind_on && step <= 2) {               // over before the face came up: back home
+        if (performing && performer_visible()) go(B_RUN_HOME);
+        else { performing = false; arrive_meters(); }
+        return;
+    }
+    switch (step) {
+    case 0:
+        face_set_resting(false);
+        if (face_moving()) return;                // a rise lands as up, a drop as gone
+        if (face_visible()) { step = 3; return; }
+        if (performing) {
+            if (remind_prev != B_RUN_HOME) performer_release();
+            next_step(200);
+            return;
+        }
+        if (!mascot_away()) mascot_leave(PEEK_LEAVE_PCT);
+        step = 2;
+        return;
+    case 1:  // the scene let go: he runs off
+        if (!settled(now)) return;
+        if (remind_prev != B_RUN_HOME) performer_run_off(PERFORMER_LEFT, 150, 300, 400);
+        step = 2;
+        return;
+    case 2:  // nobody's out: up comes the face
+        if (!settled(now) || performer_visible() || !mascot_away()) return;
+        performing = false;
+        face_rise();
+        step = 3;
+        return;
+    case 3:  // up and still: he drinks (unless it was answered on the way)
+        if (!settled(now)) return;
+        if (remind_on) face_drink(true, remind_ms);
+        step = 4;
+        return;
+    case 4:  // until it's answered or over
+        if (remind_on && face_drinking()) return;
+        face_drink(false, 0);
+        face_blink(false);
+        next_step(400);
+        return;
+    default: {
+        if (!settled(now)) return;
+        const ClawdTuning& t = clawd_tuning();
+        if (face_visible() && t.screensaver && !saver_held && face_ok()) {
+            go(B_SCREENSAVER);
+            step = 2;                             // already up: straight to resting
+        } else {
+            to_meters(false);
+        }
+        return;
+    }
+    }
+}
+
 static void run_corner(uint32_t now) {
     if (react_anim) {
         if (!reaction_still_due(react_at, now, &clawd_tuning())) {
@@ -679,6 +818,7 @@ void director_tick(void) {
     case B_RUN_HOME:    run_run_home(now); break;
     case B_ATTENTION:   run_attention(now); break;
     case B_PEEK:        run_peek(now); break;
+    case B_REMIND:      run_remind(now); break;
     }
 }
 

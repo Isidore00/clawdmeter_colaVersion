@@ -7,6 +7,7 @@
 #include "cola_lz4.h"
 #include "clawd_director.h"
 #include "idle.h"
+#include "reminder.h"
 #include "hal/board_caps.h"
 #include <Arduino.h>
 #include <Preferences.h>
@@ -98,6 +99,8 @@ static uint32_t  clock_ms = 0;
 static int       tone_override = -1;         // `room day|dusk|night`, -1 = from the clock
 
 static int       forced = -1;                // `room <act>`
+static bool      remind_on = false;          // a reminder (room_remind): she drinks
+static int       remind_saved = -1;          // what `forced` was before it
 static bool      poke_pending = false;
 static int       poke_kind = -1;             // a reaction RoomAct (RA_PAT too), or -1: by the poke count
 static PokeCount pokes = {};
@@ -112,6 +115,7 @@ static bool       pressing = false;
 static bool       hold_dead = false;         // moved too far, or already decided: no pat from this press
 static bool       hold_fired = false;        // this press made a pat: its release is nothing else
 static bool       vhold_dead = false;        // moved too far, or already decided: no voice switch from this press
+static bool       press_in_remind = false;   // the press began during a reminder: its tap answers it
 
 // Where her feet are for an act (room pixels).
 static void feet_for(RoomAct a, int* x, int* y) {
@@ -175,7 +179,7 @@ static long clock_now_s(void) {
 static void on_act(RoomAct a) {
     switch (a) {
     case RA_SNACK: say(RV_SNACK); break;
-    case RA_DRINK: if (random(3) == 0) say(RV_DRINK); break;
+    case RA_DRINK: if (!remind_on && random(3) == 0) say(RV_DRINK); break;   // a reminder speaks for itself
     case RA_SLEEP:
         if (!night_said) { night_said = true; say(RV_NIGHT); }
         break;
@@ -435,6 +439,7 @@ static void indev_cb(lv_event_t* e) {
         press_dev = dev;
         pressing = true;
         hold_dead = hold_fired = vhold_dead = false;
+        press_in_remind = remind_on;
         return;
     }
     pressing = false;
@@ -449,7 +454,8 @@ static void indev_cb(lv_event_t* e) {
         if (!visible && dx < 0) show(true);
         else if (visible && dx > 0) show(false);
     } else if (visible && abs(dx) <= TAP_MAX_MOVE && abs(dy) <= TAP_MAX_MOVE && dt <= TAP_MAX_MS) {
-        if (voice_hit(press_pt.x, press_pt.y)) voice_set(!voice_on);
+        if (press_in_remind || remind_on) reminder_ack();   // answers it: no poke (the director may have already)
+        else if (voice_hit(press_pt.x, press_pt.y)) voice_set(!voice_on);
         else if (hit(press_pt.x, press_pt.y)) { poke_pending = true; poke_kind = -1; }
     }
 }
@@ -540,11 +546,31 @@ void room_on_payload(const UsageData* d) {
 
 bool room_visible(void) { return visible; }
 
+void room_remind(bool on) {
+    if (on == remind_on) return;
+    remind_on = on;
+    if (on) { remind_saved = forced; forced = RA_DRINK; }
+    else    { forced = remind_saved; remind_saved = -1; }
+}
+
+bool room_say_reminder(void) {
+#if ROOM_VOICE
+    if (!voice_on) return true;                // muted: nothing to wait for
+    return sound_hal_voice(room_voices[RV_DRINK].adpcm, room_voices[RV_DRINK].samples, room_voices[RV_DRINK].rate);
+#else
+    return true;
+#endif
+}
+
+bool room_voice_on(void) { return voice_on; }
+void room_voice_set(bool on) { voice_set(on); }
+
 // A press held on her head for PAT_HOLD_MS without moving more than
 // PAT_MAX_MOVE px is a pat. Decided once, when the time is up; a finger that
 // strays before then (a swipe) rules it out.
 static void held_pat(uint32_t now) {
     if (!pressing || hold_dead || !press_dev) return;
+    if (remind_on) { hold_dead = true; return; }   // she's drinking: no pat now
     lv_point_t p = press_pt;
     lv_indev_get_point(press_dev, &p);
     if (abs(p.x - press_pt.x) > PAT_MAX_MOVE || abs(p.y - press_pt.y) > PAT_MAX_MOVE) {

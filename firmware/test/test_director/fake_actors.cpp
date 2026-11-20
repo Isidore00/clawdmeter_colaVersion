@@ -226,6 +226,10 @@ bool face_busy(void) { return face_moving() || !done(f_busy_until); }
 void face_blink(bool twice) { f_busy_until = now() + (twice ? 500 : 250); }
 void face_set_resting(bool) {}
 void face_look_at_x(int, uint32_t hold_ms) { f_busy_until = now() + hold_ms + 300; }
+void face_drink(bool, uint32_t) {}
+bool face_drinking(void) { return false; }
+void face_show_sign(bool) {}
+bool face_debug(const char*) { return false; }
 
 // ─── The situation ───────────────────────────────────────────────────────────
 bool ui_meters_live(void) { return world.meters_live; }

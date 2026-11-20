@@ -34,10 +34,21 @@ void director_alert(const char* message);   // attention hook fired
 void director_alert_clear(void);            // the session moved on
 bool director_take_dismissed(void);         // an alert ended on the device since the last call
 
-// Any touch press at screen x (wired internally to LVGL). On the meters it's
+// A tap at screen x (wired internally to LVGL: a press that lifts without
+// moving and isn't a long press). On the meters it's
 // tapping the aquarium: the face comes up, curious, for a while (a tap on it
 // sends it back); anywhere else it means "show me the meters".
 void director_tap(int x);
+// A press held about a second without moving calls cb (the cola builds: the
+// voice switch). The press is then not a tap. NULL: no long press.
+void director_set_long_press(bool (*cb)(void));
+// The voice switch changed (sound_on): the face holds up its sign. On the
+// meters he first comes up for it, as for a tap.
+void director_voice_sign(bool sound_on);
+// A reminder (reminder.h) on the meters: the face comes up and drinks for up
+// to ms, until director_remind(false) (answered or over), then rests as the
+// screensaver. Not in minimal mode or under an alert (there the ding does it).
+void director_remind(bool on, uint32_t ms);
 // While on, the panel is the pairing control (the touch-hold re-pair on
 // boards without a PWR button): a tap on the meters still counts as you
 // being here and dismisses an alert, but Clawd doesn't peek, so the hint

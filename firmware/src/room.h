@@ -33,6 +33,17 @@ void room_tick(void);
 // Per parsed payload: the app's wall clock (`t`) sets the time of day.
 void room_on_payload(const UsageData* d);
 bool room_visible(void);
+// A reminder (reminder.h) on the page: she drinks until it's off, and a tap
+// answers it instead of poking her.
+void room_remind(bool on);
+// The reminder's line (her drink line), wherever the page is; false while the
+// ding still has the speaker (try again). True when there's nothing to play:
+// her lines are off, or this build has none.
+bool room_say_reminder(void);
+// Her lines' switch (NVS clawdmeter/room_voice), shared with the face's
+// long press (main.cpp): it mutes her, never the ding.
+bool room_voice_on(void);
+void room_voice_set(bool on);
 // QA, the `room <what>` serial command: on | off | auto | day | dusk | night |
 // idle | game | drink | stretch | read | sleep | snack (hold that act until
 // `room auto`) | poke [surprise | shy | angry | pat] (a bare poke counts like
@@ -48,6 +59,10 @@ static inline void room_create(lv_obj_t*) {}
 static inline void room_tick(void) {}
 static inline void room_on_payload(const UsageData*) {}
 static inline bool room_visible(void) { return false; }
+static inline void room_remind(bool) {}
+static inline bool room_say_reminder(void) { return true; }
+static inline bool room_voice_on(void) { return false; }
+static inline void room_voice_set(bool) {}
 static inline bool room_debug(const char*) { return false; }
 
 #endif
