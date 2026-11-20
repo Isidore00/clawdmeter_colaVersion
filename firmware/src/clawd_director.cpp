@@ -361,12 +361,16 @@ static void indev_cb(lv_event_t* e) {
 }
 
 static void press_tick(uint32_t now) {
-    if (!press_on || press_dead || !touch_indev) return;
+    if (!press_on || !touch_indev) return;
+    // A release LVGL didn't report (its object went away): the press is over.
+    if (lv_indev_get_state(touch_indev) != LV_INDEV_STATE_PRESSED) { press_on = false; return; }
+    if (press_dead) return;
     lv_point_t p = { 0, 0 };
     lv_indev_get_point(touch_indev, &p);
     if (press_moved(p)) { press_dead = true; return; }
     if ((uint32_t)(now - press_ms) < LONG_PRESS_MS) return;
     press_dead = true;                            // a hold: never a tap, whatever the callback says
+    if (press_saw_remind && reminder_active()) reminder_ack();   // held to dismiss it: that answers it too
     if (long_press_cb) long_press_cb();
 }
 

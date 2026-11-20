@@ -34,7 +34,8 @@ Settings are fixed in the firmware for now (`REMINDER_PROGRAMS`,
   minute. Then a blink and it rests as the screensaver. Under an alert or in
   minimal mode there's only the ding and the line. A swipe to or from the
   room moves the reminder along.
-- **Answering**: a tap anywhere (or a button) ends it. On the room page that
+- **Answering**: a tap anywhere (or a button) ends it; so does a hold, which
+  also switches her voice. On the room page that
   tap isn't a poke.
 - **The panel**: a reminder holds the panel on without counting as you being
   here (`idle_remind_begin`). If it woke a dark panel, the panel goes dark

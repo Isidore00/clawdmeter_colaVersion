@@ -87,6 +87,7 @@ void reminder_tick(void) {
         for (auto& c : clocks) reminder_clock_init(&c);
     }
     const uint32_t now = millis();
+    if (active && (uint32_t)(now - started_ms) >= REMIND_SHOW_MS) end(false);
     if (active) {
         // Her line, once the ding has let go of the speaker.
         if (voice_pending) {
@@ -100,7 +101,6 @@ void reminder_tick(void) {
             if (on_room) room_remind(true);
             else director_remind(true, REMIND_SHOW_MS - (now - started_ms));   // the glass drains over what's left
         }
-        if ((uint32_t)(now - started_ms) >= REMIND_SHOW_MS) end(false);
     }
     if (!have_clock) return;
     const long t = clock_now_s();

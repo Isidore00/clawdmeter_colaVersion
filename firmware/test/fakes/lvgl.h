@@ -14,6 +14,8 @@ typedef struct _lv_display_t lv_display_t;
 typedef struct { int32_t x, y; } lv_point_t;
 typedef void (*lv_event_cb_t)(lv_event_t*);
 enum { LV_EVENT_PRESSED = 1, LV_EVENT_PRESSING, LV_EVENT_RELEASED, LV_EVENT_PRESS_LOST };
+enum { LV_INDEV_STATE_RELEASED = 0, LV_INDEV_STATE_PRESSED };
+static inline int lv_indev_get_state(const lv_indev_t*) { return LV_INDEV_STATE_RELEASED; }
 
 static inline int lv_event_get_code(lv_event_t*) { return LV_EVENT_PRESSED; }
 static inline lv_indev_t* lv_indev_get_next(lv_indev_t*) { return (lv_indev_t*)0; }
