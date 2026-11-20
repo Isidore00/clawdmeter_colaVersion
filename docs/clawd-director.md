@@ -143,6 +143,27 @@ Small reactions on the meters, from `home` or `corner`:
   If he's out on a trip he hurries back for it; if he's in another room it
   waits up to 5 min for him to sit down. It outranks the wave.
 
+### A reminder (cola builds)
+
+`remind` (`run_remind`): a reminder (`reminder.cpp`, `docs/reminders.md`)
+while the room page isn't up. Whoever is out leaves first (the performer
+releases and runs off, the corner Clawd ducks out), then the face comes up,
+or the one that's already up is used, and drinks: eyes shut, a glass with a
+straw, the water going down. The reminder ends on a tap or a button (it
+answers it) or after a minute; the face blinks and rests as the screensaver,
+or goes home if the screensaver is off. Not under an alert or in minimal
+mode, where the ding does it alone. Ended before the face came up: he goes
+home.
+
+### Touch: taps, swipes and holds
+
+A press counts as engagement at once but is a tap (`director_tap`) only when
+it lifts within 24 px of where it landed and wasn't held, so a swipe that
+changes page never makes the face peek, and a hold doesn't drop the face
+before it's known to be a hold. A press held a second calls the
+`director_set_long_press` callback (the cola builds: her voice switch, and
+the face holds up its sign, `director_voice_sign`).
+
 ### A tap on the meters (the aquarium)
 
 While the director is on the meters (`home`, or `corner`: a commanded act, a
@@ -381,7 +402,10 @@ cooldown 15 min, show scene loop 16 s, quiet 10 min, calm dip every 3–5 min,
 calm scene loop 10 s, alert timeout 2 min, long turn 2 min, joy wait 5 min,
 reaction wait 15 s, blinks every 2–6 s, peek look 1.6–2.4 s, peek
 curiosity 5 min, double blink on a peek 30 %, curious glances back toward the
-tap 60 %. `clawd_tuning_fast()` compresses them for the sim (`SIM_FAST=1`;
+tap 60 %. The cola builds (`-DCLAWD_COLA=1`) bring the screensaver up after
+30 s of quiet with or without live data (`face_without_link`) and keep a peek
+up until it's tapped (`peek_curious_ms` 0); their panel sleeps after 10 min
+(`idle_cfg.h`). `clawd_tuning_fast()` compresses them for the sim (`SIM_FAST=1`;
 the peek's curiosity becomes 12 s, under the 15 s quiet time as in the
 defaults).
 

@@ -13,6 +13,7 @@ full-screen object on top of them, hidden until asked for.
 | Swipe left on the meters | open the room |
 | Swipe right on the room | back to the meters |
 | Tap her | a poke, about 1.5 s, then back. By the pokes in the last 10 s: the 1st surprise, the 2nd and 3rd shy, the 4th on angry; 10 s without one starts the count over. A poke during a reaction starts the next one at once |
+| A reminder (`docs/reminders.md`) | she drinks, with the ding and her drink line; a tap anywhere answers it (not a poke) |
 | Hold her head | a head pat: press the top 30% of her and hold about 0.6 s without moving more than 20 px; two frames alternate for 2.5 s. A finger that moves first is a swipe or drag, never a pat; the release of a pat does nothing else |
 
 The director's screensaver face doesn't start while the room is up (nor does
@@ -57,7 +58,8 @@ A still room on an AMOLED is the worst case, so while the page is up:
   puts it back to 100 %.
 - **USB sleep** (`idle_set_sleep_on_usb`): at night the usual 30 minute
   auto-sleep also runs on USB power (normally it never sleeps there); a
-  button or touch wakes the panel.
+  button or touch wakes the panel. The cola builds now sleep after 10 minutes
+  on USB at any hour (`idle_cfg.h`), so this only matters elsewhere.
 - **Drift**: every 3 minutes the whole page (background, patches and her,
   hit boxes included) steps one pixel round a ring of 0-2 px offsets and
   back to (0, 0): 24 minutes a lap.
