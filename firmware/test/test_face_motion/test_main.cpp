@@ -108,6 +108,23 @@ static void deterministic() {
     }
 }
 
+static void drift_rings_round_the_centre(void) {
+    int sx = 0, sy = 0;
+    for (unsigned k = 0; k < FACE_DRIFT_STEPS; k++) {
+        int dx, dy;
+        face_drift_for_step(k, 4, &dx, &dy);
+        TEST_ASSERT_TRUE(dx >= -4 && dx <= 4 && dy >= -4 && dy <= 4);
+        sx += dx; sy += dy;
+    }
+    TEST_ASSERT_EQUAL(0, sx);                        // centred: it never wanders off one way
+    TEST_ASSERT_EQUAL(0, sy);
+    int ax, ay, bx, by;
+    face_drift_for_step(0, 4, &ax, &ay);
+    face_drift_for_step(FACE_DRIFT_STEPS, 4, &bx, &by);
+    TEST_ASSERT_EQUAL(ax, bx);                       // a ring
+    TEST_ASSERT_EQUAL(ay, by);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(rise_starts_below_and_ends_dead_still_at_rest);
@@ -116,5 +133,6 @@ int main() {
     RUN_TEST(drop_stays_full_width_the_whole_way);
     RUN_TEST(drop_anticipates_then_falls_below_the_bezel);
     RUN_TEST(deterministic);
+    RUN_TEST(drift_rings_round_the_centre);
     return UNITY_END();
 }

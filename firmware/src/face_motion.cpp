@@ -108,3 +108,12 @@ FacePose face_motion_pose(FaceMove m, uint32_t t_ms, const FaceGeom* g) {
     if (m == FACE_MOVE_RISE && t_ms >= RISE_END_MS) { p.y = 0; p.eye_dy = 0; }
     return p;
 }
+
+void face_drift_for_step(unsigned step, int unit, int* dx, int* dy) {
+    static const int8_t RING[FACE_DRIFT_STEPS][2] = {
+        {-1, -1}, {0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0},
+    };
+    const unsigned i = step % FACE_DRIFT_STEPS;
+    *dx = RING[i][0] * unit;
+    *dy = RING[i][1] * unit;
+}

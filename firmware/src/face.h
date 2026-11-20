@@ -34,6 +34,16 @@ void face_apply_theme(void);   // pick up a new palette (TH_CLAWD, TH_EYE)
 // the resting glance, far eye 1.5x on top), hold for hold_ms, then come back
 // to you. face_busy() until they're back.
 void face_look_at_x(int x, uint32_t hold_ms);
+// A water reminder: eyes shut, a glass with a straw in front of him, the
+// water going down over `ms` (reminder_water_pct). Only while the face is up
+// and still; off (or a drop, a rise) puts the glass away and opens the eyes.
+// A blink is skipped while he drinks.
+void face_drink(bool on, uint32_t ms);
+bool face_drinking(void);
+// The voice switch, answered with a sign: he holds up a little board with a
+// speaker on it (waves: sound on; a red slash: muted) for a moment and puts it
+// down. If the face isn't up and still, the sign waits a few seconds for it.
+void face_show_sign(bool sound_on);
 // QA, `clawd face <happy|heart|wink|surprise|sleepy>`: one of the rarer
 // expressions now. False if the face isn't up and still, or the word is unknown.
 bool face_debug(const char* what);

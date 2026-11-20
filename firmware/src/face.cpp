@@ -4,6 +4,7 @@
 #include "perf.h"
 #include "field.h"
 #include "face_motion.h"
+#include "reminder_policy.h"
 #include "hal/board_caps.h"
 #include <lvgl.h>
 #include <Arduino.h>
@@ -32,7 +33,7 @@ static lv_obj_t* eye_open[2];
 static lv_obj_t* squint[2][9];   // the cells of whatever shape the eye wears instead of the open eye
 
 // What an eye shows: the open rectangle, or a shape built from the nine cells.
-enum Glyph : uint8_t { GL_OPEN, GL_SQUINT, GL_HAPPY, GL_HEART };
+enum Glyph : uint8_t { GL_OPEN, GL_SQUINT, GL_HAPPY, GL_HEART, GL_CLOSED };
 
 static int W = 480, H = 480, mind = 480;
 static int eye_cx[2];        // eye centre x, px
@@ -79,6 +80,41 @@ struct EyeBox { int x, y, w, h, ew, eh; bool solid; uint8_t g; };   // solid: th
 static EyeBox eye_last[2];
 static uint8_t glyph[2] = { GL_OPEN, GL_OPEN };
 
+// Burn-in drift (face_drift_for_step): the eyes, the glass and the sign sit
+// this far off their places; one step round the ring every DRIFT_MS while up.
+#define DRIFT_MS 60000
+static int      drift_x = 0, drift_y = 0;
+static unsigned drift_step = 0;
+static uint32_t drift_at = 0;
+
+// Drinking (a water reminder): eyes shut "‿", a glass with a straw in front of
+// him, the water going down over the reminder. LVGL shapes on the face.
+static lv_obj_t* cup = NULL;          // the glass: open-topped, white sides
+static lv_obj_t* water = NULL;        // behind the glass's sides
+static lv_obj_t* straw = NULL;        // a bent line up from the glass
+static lv_point_precise_t straw_pts[3];
+static int      cup_x = 0, cup_y = 0, cup_w = 0, cup_h = 0, cup_bw = 0;
+static bool     drinking = false;
+static uint32_t drink_start = 0, drink_ms = 0;
+static int      water_shown = -1;
+
+// The sign (the voice switch): a little white board on a stick, held up from
+// below with a speaker on it (a slash when muted, waves when on), then down.
+// 0 none, 1 waiting for the face to be up and still, 2 up, 3 held, 4 down.
+#define SIGN_UP_MS    280
+#define SIGN_HOLD_MS  1600
+#define SIGN_DOWN_MS  240
+#define SIGN_WAIT_MS  4000
+static lv_obj_t* sign = NULL;
+static lv_obj_t* sign_slash = NULL;
+static lv_obj_t* sign_wave[2] = { NULL, NULL };
+static lv_obj_t* sign_box = NULL;
+static lv_obj_t* sign_cone = NULL;
+static lv_point_precise_t sign_cone_pts[5], sign_slash_pts[2], sign_wave_pts[2][3];
+static uint8_t  sign_phase = 0;
+static uint32_t sign_t0 = 0;
+static int      sign_w = 0, sign_h = 0, sign_rest_y = 0;
+
 static int S(int v) { return v * mind / 480; }
 
 static void apply_eyes(void);
@@ -110,6 +146,11 @@ static void layout_glyph(int e, uint8_t g) {
         const int x0 = (box_w0 - 10 * h) / 2, y0 = S(60) - 5 * h / 2;
         for (int i = 0; i < 5; i++) cell_at(e, i, x0 + i * h, y0 + (4 - i) * h, 2 * h, h);
         for (int i = 0; i < 4; i++) cell_at(e, 5 + i, x0 + (5 + i) * h, y0 + (1 + i) * h, 2 * h, h);
+    } else if (g == GL_CLOSED) {               // "‿": the happy arch upside down, shut and content
+        const int h = S(7) > 0 ? S(7) : 1;
+        const int x0 = (box_w0 - 10 * h) / 2, y0 = S(60) - 5 * h / 2;
+        for (int i = 0; i < 5; i++) cell_at(e, i, x0 + i * h, y0 + i * h, 2 * h, h);
+        for (int i = 0; i < 4; i++) cell_at(e, 5 + i, x0 + (5 + i) * h, y0 + (3 - i) * h, 2 * h, h);
     } else if (g == GL_HEART) {                // a 7 x 6 pixel heart
         const int h = S(9) > 0 ? S(9) : 1;
         const int x0 = (box_w0 - 7 * h) / 2, y0 = S(60) - 3 * h;
@@ -216,8 +257,8 @@ static void apply_eyes(void) {
     if (h < 4) h = 4;
     h += h & 1; w += w & 1;
     for (int e = 0; e < 2; e++) {
-        const int cx = eye_cx[e] + dx[e];
-        const int cy = pose.y + eye_top + eye_h0 / 2 + pose.eye_dy;
+        const int cx = eye_cx[e] + dx[e] + drift_x;
+        const int cy = pose.y + eye_top + eye_h0 / 2 + pose.eye_dy + drift_y;
         EyeBox& b = eye_next[e];
         b.g = glyph[e];
         if (glyph[e] != GL_OPEN) { b.x = cx - glyph_cx(glyph[e]); b.y = cy - eye_h0 / 2; b.w = box_w0; b.h = box_h0; b.ew = eye_w0; b.eh = eye_h0; b.solid = false; }
@@ -263,6 +304,159 @@ static FacePose gone_pose(void) {
     return p;
 }
 
+// ---- the glass and the sign ------------------------------------------------
+static lv_obj_t* line(lv_obj_t* parent, const lv_point_precise_t* pts, uint32_t n, int w, lv_color_t c) {
+    lv_obj_t* ln = lv_line_create(parent);
+    lv_line_set_points(ln, pts, n);
+    lv_obj_set_style_line_width(ln, w > 0 ? w : 1, 0);
+    lv_obj_set_style_line_color(ln, c, 0);
+    lv_obj_set_style_line_rounded(ln, true, 0);
+    lv_obj_clear_flag(ln, LV_OBJ_FLAG_CLICKABLE);
+    return ln;
+}
+
+static void make_cup(void) {
+    cup_w = S(84); cup_h = S(116); cup_bw = S(5) > 0 ? S(5) : 1;
+    cup_x = W / 2 - cup_w / 2;
+    cup_y = eye_top + eye_h0 + S(36);
+    water = rect(root, 0, 0, 1, 1, lv_color_make(0x8F, 0xD8, 0xFF));
+    lv_obj_set_style_radius(water, S(4), 0);
+    cup = lv_obj_create(root);
+    lv_obj_remove_style_all(cup);
+    lv_obj_set_size(cup, cup_w, cup_h);
+    lv_obj_set_style_bg_color(cup, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(cup, LV_OPA_20, 0);
+    lv_obj_set_style_border_color(cup, lv_color_white(), 0);
+    lv_obj_set_style_border_opa(cup, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(cup, cup_bw, 0);
+    lv_obj_set_style_border_side(cup, (lv_border_side_t)(LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_RIGHT | LV_BORDER_SIDE_BOTTOM), 0);
+    lv_obj_set_style_radius(cup, S(10), 0);
+    lv_obj_clear_flag(cup, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(cup, LV_OBJ_FLAG_SCROLLABLE);
+    // The straw: from near the bottom of the glass, up past its rim, bent
+    // toward the middle of his face.
+    const int sx = W / 2 + S(14);
+    straw_pts[0].x = sx;              straw_pts[0].y = cup_y + cup_h - S(26);
+    straw_pts[1].x = sx;              straw_pts[1].y = cup_y - S(22);
+    straw_pts[2].x = W / 2 - S(6);    straw_pts[2].y = cup_y - S(42);
+    straw = line(root, straw_pts, 3, S(9), lv_color_make(0xFF, 0xF4, 0xEC));
+    lv_obj_add_flag(water, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(cup, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(straw, LV_OBJ_FLAG_HIDDEN);
+}
+
+// The water line for pct percent full (of the glass's inside, below a gap at
+// the rim).
+static void place_water(int pct) {
+    const int inner = cup_h - cup_bw - S(14);
+    int h = inner * pct / 100;
+    if (h < 2) h = 2;
+    lv_obj_set_pos(water, cup_x + drift_x + cup_bw, cup_y + drift_y + cup_h - cup_bw - h);
+    lv_obj_set_size(water, cup_w - 2 * cup_bw, h);
+    water_shown = pct;
+}
+
+static void place_cup(void) {
+    if (!cup) return;
+    lv_obj_set_pos(cup, cup_x + drift_x, cup_y + drift_y);
+    lv_obj_set_pos(straw, drift_x, drift_y);
+    if (water_shown >= 0) place_water(water_shown);
+}
+
+static void show_cup(bool on) {
+    if (!cup) return;
+    lv_obj_t* parts[] = { water, cup, straw };
+    for (lv_obj_t* o : parts) {
+        if (on) lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN);
+        else    lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void set_pt(lv_point_precise_t* p, int x, int y) { p->x = x; p->y = y; }
+
+static void make_sign(void) {
+    sign_w = S(120); sign_h = S(92);
+    const int stick_w = S(14), stick_h = S(170);
+    sign_rest_y = eye_top + eye_h0 + S(40);
+    sign = lv_obj_create(root);
+    lv_obj_remove_style_all(sign);
+    lv_obj_set_size(sign, sign_w, sign_h + stick_h);
+    lv_obj_clear_flag(sign, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(sign, LV_OBJ_FLAG_SCROLLABLE);
+    rect(sign, (sign_w - stick_w) / 2, sign_h - S(6), stick_w, stick_h, lv_color_make(0x8A, 0x5A, 0x3C));
+    lv_obj_t* board = rect(sign, 0, 0, sign_w, sign_h, lv_color_white());
+    lv_obj_set_style_radius(board, S(14), 0);
+    // A speaker in the eye colour, centred on the board (authored on 120 x 92).
+    sign_box = rect(board, S(26), S(34), S(16), S(24), COL_EYE);
+    static const int cone[5][2] = { {42, 34}, {60, 18}, {60, 74}, {42, 58}, {42, 34} };
+    for (int i = 0; i < 5; i++) set_pt(&sign_cone_pts[i], S(cone[i][0]), S(cone[i][1]));
+    sign_cone = line(board, sign_cone_pts, 5, S(6), COL_EYE);
+    static const int waves[2][3][2] = { { {72, 34}, {78, 46}, {72, 58} }, { {84, 24}, {94, 46}, {84, 68} } };
+    for (int w = 0; w < 2; w++) {
+        for (int i = 0; i < 3; i++) set_pt(&sign_wave_pts[w][i], S(waves[w][i][0]), S(waves[w][i][1]));
+        sign_wave[w] = line(board, sign_wave_pts[w], 3, S(6), COL_EYE);
+    }
+    set_pt(&sign_slash_pts[0], S(18), S(14));
+    set_pt(&sign_slash_pts[1], S(102), S(78));
+    sign_slash = line(board, sign_slash_pts, 2, S(8), lv_color_make(0xE0, 0x44, 0x3C));
+    lv_obj_add_flag(sign, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Where the sign stands: under his face, or beside the glass while he drinks.
+static int sign_x(void) {
+    const int cx = drinking ? W / 2 + S(118) : W / 2;
+    return cx - sign_w / 2 + drift_x;
+}
+
+static void sign_place(int y) { lv_obj_set_pos(sign, sign_x(), y + drift_y); }
+
+static void sign_hide(void) {
+    sign_phase = 0;
+    if (sign) lv_obj_add_flag(sign, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void sign_start(uint32_t now) {
+    sign_phase = 2;
+    sign_t0 = now;
+    sign_place(H + S(10));
+    lv_obj_move_foreground(sign);
+    lv_obj_clear_flag(sign, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Up with an ease-out, held, down with an ease-in, by the clock.
+static void sign_tick(uint32_t now) {
+    if (!sign || sign_phase == 0) return;
+    const uint32_t ms = now - sign_t0;
+    if (sign_phase == 1) {
+        if (visible && !moving) sign_start(now);
+        else if (ms >= SIGN_WAIT_MS) sign_phase = 0;   // the face never came up
+        return;
+    }
+    const int below = H + S(10), span = below - sign_rest_y;
+    if (sign_phase == 2) {
+        if (ms >= SIGN_UP_MS) { sign_phase = 3; sign_t0 = now; sign_place(sign_rest_y); return; }
+        const int f = 1000 - (int)(ms * 1000 / SIGN_UP_MS);       // 1000 -> 0
+        sign_place(sign_rest_y + span * f / 1000 * f / 1000);
+    } else if (sign_phase == 3) {
+        if (ms >= SIGN_HOLD_MS) { sign_phase = 4; sign_t0 = now; }
+    } else if (sign_phase == 4) {
+        if (ms >= SIGN_DOWN_MS) { sign_hide(); return; }
+        const int f = (int)(ms * 1000 / SIGN_DOWN_MS);              // 0 -> 1000
+        sign_place(sign_rest_y + span * f / 1000 * f / 1000);
+    }
+}
+
+// Drinking ends: the glass goes, the eyes open.
+static void drink_off(void) {
+    if (!drinking) return;
+    drinking = false;
+    show_cup(false);
+    water_shown = -1;
+    set_glyph(0, GL_OPEN);
+    set_glyph(1, GL_OPEN);
+    if (sign_phase == 3) sign_place(sign_rest_y);    // the sign moves back to the middle
+}
+
 void face_init(void) {
     const BoardCaps& c = board_caps();
     W = c.width; H = c.height;
@@ -298,6 +492,8 @@ void face_init(void) {
         layout_glyph(e, GL_OPEN);              // the cells hide until a shape wants them
         eye_last[e] = { INT32_MIN, 0, box_w0, box_h0, -1, -1, false, GL_OPEN };   // forces the first placement
     }
+    make_cup();
+    make_sign();
     pose = gone_pose();
     place_eyes(0);
     clawd_rng_seed(&rng, millis() ^ 0xFACE);
@@ -371,6 +567,8 @@ static void rise(int interest) {
     if (!root) return;
     interest_g = interest;
     blink_phase = 0; glance_phase = 0;
+    drink_off();
+    if (sign_phase >= 2) sign_hide();         // a sign still waiting (1) shows once it's up
     set_squint(false);
     expr_clear();
     lv_anim_delete(&glance_cur, NULL);
@@ -391,6 +589,8 @@ void face_rise_toward(int x) {
 void face_drop(void) {
     if (!root || !visible) return;
     resting = false;
+    drink_off();
+    sign_hide();
     // Eyes open and front-facing as it goes: he's looking at you, then away.
     blink_phase = 0;
     set_squint(false);
@@ -407,6 +607,8 @@ void face_hide_now(void) {
     lv_anim_delete(&glance_cur, NULL);
     if (moving) perf_end(perf_window());
     moving = false; resting = false;
+    drink_off();
+    sign_hide();
     blink_phase = 0; glance_phase = 0; glance_cur = 0; interest_g = 0;
     set_squint(false);
     expr_clear();
@@ -418,7 +620,7 @@ bool face_moving(void)  { return moving; }
 bool face_busy(void)    { return moving || blink_phase != 0 || glance_phase != 0 || expr_on; }
 
 void face_blink(bool twice) {
-    if (!visible) return;
+    if (!visible || drinking) return;
     if (expr_on) expr_clear();                // the noticing beat cuts an expression short
     blink_twice = twice;
     blink_phase = 1;
@@ -432,6 +634,11 @@ void face_apply_theme(void) {
     for (int e = 0; e < 2; e++) {
         lv_obj_set_style_bg_color(eye_open[e], COL_EYE, 0);
         for (lv_obj_t* o : squint[e]) if (o) lv_obj_set_style_bg_color(o, COL_EYE, 0);
+    }
+    if (sign_box) {
+        lv_obj_set_style_bg_color(sign_box, COL_EYE, 0);
+        lv_obj_set_style_line_color(sign_cone, COL_EYE, 0);
+        for (lv_obj_t* w : sign_wave) lv_obj_set_style_line_color(w, COL_EYE, 0);
     }
     lv_obj_invalidate(root);   // the body is drawn from field.color
 }
@@ -510,8 +717,24 @@ static void expr_tick(uint32_t now) {
 }
 
 void face_tick(void) {
-    if (!root || !visible) return;
+    if (!root) return;
     const uint32_t now = millis();
+    sign_tick(now);
+    if (!visible) return;
+
+    if (!moving && (uint32_t)(now - drift_at) >= DRIFT_MS) {
+        drift_at = now;
+        drift_step++;
+        const int unit = geom.cell / 2 > 0 ? geom.cell / 2 : 1;
+        face_drift_for_step(drift_step, unit, &drift_x, &drift_y);
+        apply_eyes();
+        place_cup();
+        if (sign_phase == 3) sign_place(sign_rest_y);
+    }
+    if (drinking) {
+        const int pct = reminder_water_pct(now - drink_start, drink_ms);
+        if (pct != water_shown) place_water(pct);
+    }
 
     if (blink_phase && (int32_t)(now - blink_until) >= 0) {
         if (blink_phase == 1 && blink_twice) {
@@ -528,7 +751,7 @@ void face_tick(void) {
     }
 
     if (expr_on) expr_tick(now);
-    if (!resting || moving || blink_phase || glance_phase || expr_on) return;
+    if (!resting || moving || blink_phase || glance_phase || expr_on || drinking) return;
     if ((int32_t)(now - next_act_at) < 0) return;
     const FacePlan p = face_plan_next(&rng, &clawd_tuning());
     switch (p.act) {
@@ -558,4 +781,40 @@ bool face_debug(const char* what) {
     if (!visible || moving || blink_phase || glance_phase) return false;
     expr_start_act(a, millis());
     return true;
+}
+
+void face_drink(bool on, uint32_t ms) {
+    if (!root) return;
+    if (!on) { drink_off(); return; }
+    if (!visible || moving) return;
+    blink_phase = 0;
+    expr_clear();
+    lv_anim_delete(&glance_cur, NULL);
+    glance_phase = 0;
+    place_eyes(0);
+    drinking = true;
+    drink_start = millis();
+    drink_ms = ms;
+    set_glyph(0, GL_CLOSED);
+    set_glyph(1, GL_CLOSED);
+    place_cup();
+    place_water(100);
+    show_cup(true);
+    if (sign_phase == 3) sign_place(sign_rest_y);    // a sign already up steps aside
+}
+
+bool face_drinking(void) { return drinking; }
+
+void face_show_sign(bool sound_on) {
+    if (!sign) return;
+    if (sound_on) {
+        lv_obj_add_flag(sign_slash, LV_OBJ_FLAG_HIDDEN);
+        for (lv_obj_t* w : sign_wave) lv_obj_clear_flag(w, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(sign_slash, LV_OBJ_FLAG_HIDDEN);
+        for (lv_obj_t* w : sign_wave) lv_obj_add_flag(w, LV_OBJ_FLAG_HIDDEN);
+    }
+    const uint32_t now = millis();
+    if (visible && !moving) sign_start(now);
+    else { sign_phase = 1; sign_t0 = now; }
 }

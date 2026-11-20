@@ -40,3 +40,9 @@ FacePose face_motion_pose(FaceMove m, uint32_t t_ms, const FaceGeom* g);
 // Arm nub size (also the body's narrowing while it rises), px.
 int face_arm_w(const FaceGeom* g);
 int face_arm_h(const FaceGeom* g);
+
+// Burn-in drift: the face's eyes (and what it holds) step slowly round a small
+// ring so no edge stays on the same pixels. Offset for a step, in px, `unit`
+// px per ring cell (about half a face cell).
+#define FACE_DRIFT_STEPS 8
+void face_drift_for_step(unsigned step, int unit, int* dx, int* dy);
