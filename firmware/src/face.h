@@ -34,3 +34,6 @@ void face_apply_theme(void);   // pick up a new palette (TH_CLAWD, TH_EYE)
 // the resting glance, far eye 1.5x on top), hold for hold_ms, then come back
 // to you. face_busy() until they're back.
 void face_look_at_x(int x, uint32_t hold_ms);
+// QA, `clawd face <happy|heart|wink|surprise|sleepy>`: one of the rarer
+// expressions now. False if the face isn't up and still, or the word is unknown.
+bool face_debug(const char* what);

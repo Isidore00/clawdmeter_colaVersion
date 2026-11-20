@@ -141,7 +141,7 @@ static void clear_pairing(const char* why) {
 static char cmd_buf[CMD_BUF_SIZE];
 static int cmd_pos = 0;
 
-static void send_screenshot() {
+static void send_screenshot(bool top_layer = false) {
 #ifndef BOARD_HAS_PSRAM
     // A full RGB565 framebuffer doesn't fit in internal SRAM on PSRAM-free
     // boards (e.g. 480×480×2 = 460 KB). Capture is unsupported there.
@@ -161,7 +161,10 @@ static void send_screenshot() {
     lv_draw_buf_t draw_buf;
     lv_draw_buf_init(&draw_buf, w, h, LV_COLOR_FORMAT_RGB565, row_bytes, sbuf, buf_size);
 
-    lv_result_t res = lv_snapshot_take_to_draw_buf(lv_screen_active(), LV_COLOR_FORMAT_RGB565, &draw_buf);
+    // `screenshot top` takes the top layer instead (the screensaver and peek face
+    // live there, so the plain screenshot never shows them): the face over black.
+    lv_result_t res = lv_snapshot_take_to_draw_buf(top_layer ? lv_layer_top() : lv_screen_active(),
+                                                   LV_COLOR_FORMAT_RGB565, &draw_buf);
     if (res != LV_RESULT_OK) {
         heap_caps_free(sbuf);
         Serial.println("SCREENSHOT_ERR");
@@ -192,6 +195,7 @@ static void check_serial_cmd() {
         if (c == '\n' || c == '\r') {
             cmd_buf[cmd_pos] = '\0';
             if (strcmp(cmd_buf, "screenshot") == 0) send_screenshot();
+            else if (strcmp(cmd_buf, "screenshot top") == 0) send_screenshot(true);
             else if (strcmp(cmd_buf, "chime") == 0 || strcmp(cmd_buf, "buzz") == 0) sound_hal_chime();
             else if (strncmp(cmd_buf, "chime ", 6) == 0) {
                 // Dev tool for tuning a board's speaker: `chime <gain> [volume]`,

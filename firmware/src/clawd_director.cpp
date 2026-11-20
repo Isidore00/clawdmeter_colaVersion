@@ -684,6 +684,7 @@ void director_tick(void) {
 
 // ─── QA ──────────────────────────────────────────────────────────────────────
 bool director_debug(const char* name) {
+    if (strncmp(name, "face ", 5) == 0) return face_debug(name + 5);   // `clawd face happy|heart|wink|surprise|sleepy`
     if (strcmp(name, "home") == 0) {
         // "Show me the meters" (a tap anywhere but home, without the peek).
         engage();

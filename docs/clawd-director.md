@@ -176,6 +176,15 @@ counted from when it starts to rise; `peek_hold`):
 - It rests like the screensaver face, but its glances go back toward where
   you tapped 60 % of the time (`face_glance_px`; the others are the usual
   left / right glances). Blinks are irregular, some double.
+- A resting face (this one and the screensaver's) also tries five rarer
+  expressions, about one rest in four (`face_plan_next`): happy `^ ^`, heart
+  eyes, a wink (the right eye squints), surprise (the eyes go wide, 135 %) and
+  sleepy (the lids droop twice). Happy, heart and wink swap the eyes' shape
+  for `face_expr_hold_ms`; surprise and sleepy scale the open eye by the clock
+  (`face_expr_scale_pct`). A rise, a drop or the noticing blink ends one at
+  once. QA: `clawd face <happy|heart|wink|surprise|sleepy>` with the face up,
+  and `screenshot top` (the face lives on `lv_layer_top()`, which the plain
+  `screenshot` leaves out).
 - After 5 min it goes back on its own: `face-home` without the blink, the
   drop, and he walks back to his seat.
 - Prompts, stops, usage moving, buttons and PWR don't drop it, and the usual

@@ -230,9 +230,24 @@ int peek_glance_px(int tap_x, int width, int max_px);
 // ─── Resting face behaviour ──────────────────────────────────────────────────
 // What the resting face does next, and when. Blinks are irregular and
 // sometimes double; the rest are glances where the far eye travels further.
-enum FaceAct { FACE_BLINK, FACE_DOUBLE_BLINK, FACE_GLANCE_LEFT, FACE_GLANCE_RIGHT };
+// Five rarer expressions join them (about one rest in four): happy (^ ^),
+// heart eyes, a wink, surprise (the eyes go wide) and sleepy (the lids droop
+// twice). The first three swap the eyes' shape for a short while; surprise and
+// sleepy scale the open eye's height over time (face_expr_scale_pct).
+enum FaceAct {
+    FACE_BLINK, FACE_DOUBLE_BLINK, FACE_GLANCE_LEFT, FACE_GLANCE_RIGHT,
+    FACE_HAPPY, FACE_HEART, FACE_WINK, FACE_SURPRISE, FACE_SLEEPY,
+};
 struct FacePlan { FaceAct act; uint32_t gap_ms; };
 FacePlan face_plan_next(ClawdRng* r, const ClawdTuning* t);
+
+// How long a shape-swap expression (happy, heart, wink) holds; 0 for the
+// others.
+uint32_t face_expr_hold_ms(FaceAct act);
+// The open eye's height, in percent of normal, `ms` after a surprise or
+// sleepy expression began; `*done` is set once it is over (and 100 returned).
+// 100 and done at once for any other act.
+int face_expr_scale_pct(FaceAct act, uint32_t ms, bool* done);
 
 // A resting glance (FACE_GLANCE_LEFT / RIGHT) as eye offset px. While the
 // face is curious about a tap (`tap_g` != 0, the peek_glance_px of it), a

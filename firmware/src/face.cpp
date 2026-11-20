@@ -7,6 +7,7 @@
 #include "hal/board_caps.h"
 #include <lvgl.h>
 #include <Arduino.h>
+#include <string.h>
 
 // Geometry is authored on a 480 px square (design system storyboards) and
 // scaled by the panel's shorter side; the eye block is centred vertically.
@@ -28,7 +29,10 @@ static Field     field;      // the body + arms: redraws only what changes
 static lv_obj_t* root = NULL; // == field.obj: full screen, never moves; the eyes are its children
 static lv_obj_t* eye_box[2];
 static lv_obj_t* eye_open[2];
-static lv_obj_t* squint[2][9];
+static lv_obj_t* squint[2][9];   // the cells of whatever shape the eye wears instead of the open eye
+
+// What an eye shows: the open rectangle, or a shape built from the nine cells.
+enum Glyph : uint8_t { GL_OPEN, GL_SQUINT, GL_HAPPY, GL_HEART };
 
 static int W = 480, H = 480, mind = 480;
 static int eye_cx[2];        // eye centre x, px
@@ -62,30 +66,85 @@ static uint32_t next_act_at = 0;
 static int      interest_g = 0;       // curious about a tap: resting glances go back there (px)
 static ClawdRng rng;
 
+// The rarer expressions (clawd_policy.h FaceAct): a shape swap holds for
+// face_expr_hold_ms; surprise and sleepy scale the open eye's height by the
+// clock (face_expr_scale_pct). None while `expr_on` is false.
+static bool     expr_on = false;
+static FaceAct  expr_act = FACE_BLINK;
+static uint32_t expr_start = 0;
+static int      eye_scale = 100;      // the open eye's height in percent; wider too above 100
+
 // Last geometry handed to LVGL per eye, so an unchanged eye costs nothing.
-struct EyeBox { int x, y, w, h, ew, eh; bool solid; };   // solid: the box is exactly the open eye
+struct EyeBox { int x, y, w, h, ew, eh; bool solid; uint8_t g; };   // solid: the box is exactly the open eye
 static EyeBox eye_last[2];
-static bool   squinting = false;
+static uint8_t glyph[2] = { GL_OPEN, GL_OPEN };
 
 static int S(int v) { return v * mind / 480; }
 
 static void apply_eyes(void);
 
-static void set_squint(bool on) {
-    if (on != squinting) {
-        // Squinting: the box widens to hold the chevron, sized before the
-        // chevron shows so it never draws clipped.
-        squinting = on;
-        apply_eyes();
-    }
-    for (int e = 0; e < 2; e++) {
-        if (on) lv_obj_add_flag(eye_open[e], LV_OBJ_FLAG_HIDDEN);
-        else    lv_obj_clear_flag(eye_open[e], LV_OBJ_FLAG_HIDDEN);
-        for (int i = 0; i < 9; i++) {
-            if (on) lv_obj_clear_flag(squint[e][i], LV_OBJ_FLAG_HIDDEN);
-            else    lv_obj_add_flag(squint[e][i], LV_OBJ_FLAG_HIDDEN);
+// Where the glyph's middle sits across the box (the squint's has always been
+// the open eye's centre; the new shapes are centred in the box).
+static int glyph_cx(uint8_t g) { return g == GL_SQUINT ? S(30) : box_w0 / 2; }
+
+static void cell_at(int e, int i, int x, int y, int w, int h) {
+    lv_obj_set_pos(squint[e][i], x, y);
+    lv_obj_set_size(squint[e][i], w, h);
+    lv_obj_clear_flag(squint[e][i], LV_OBJ_FLAG_HIDDEN);
+}
+
+// Places the nine cells for a shape (the unused ones hide) and shows them or
+// the open eye.
+static void layout_glyph(int e, uint8_t g) {
+    const int u = S(12) > 0 ? S(12) : 1;
+    for (int i = 0; i < 9; i++) lv_obj_add_flag(squint[e][i], LV_OBJ_FLAG_HIDDEN);
+    if (g == GL_SQUINT) {
+        const int dir = e == 0 ? +1 : -1;      // left eye ">", right eye "<"
+        for (int i = 0; i < 5; i++) {
+            const int dx = (dir > 0 ? i : 4 - i) * u;
+            cell_at(e, i, dx, S(20) + i * u, 2 * u, u);
+            if (i < 4) cell_at(e, 5 + i, dx, S(20) + (8 - i) * u, 2 * u, u);
         }
+    } else if (g == GL_HAPPY) {                // "^": a 5-row arch, cells 2 wide, stepping 1
+        const int h = S(7) > 0 ? S(7) : 1;
+        const int x0 = (box_w0 - 10 * h) / 2, y0 = S(60) - 5 * h / 2;
+        for (int i = 0; i < 5; i++) cell_at(e, i, x0 + i * h, y0 + (4 - i) * h, 2 * h, h);
+        for (int i = 0; i < 4; i++) cell_at(e, 5 + i, x0 + (5 + i) * h, y0 + (1 + i) * h, 2 * h, h);
+    } else if (g == GL_HEART) {                // a 7 x 6 pixel heart
+        const int h = S(9) > 0 ? S(9) : 1;
+        const int x0 = (box_w0 - 7 * h) / 2, y0 = S(60) - 3 * h;
+        cell_at(e, 0, x0 + 1 * h, y0 + 0 * h, 2 * h, h);
+        cell_at(e, 1, x0 + 4 * h, y0 + 0 * h, 2 * h, h);
+        cell_at(e, 2, x0 + 0 * h, y0 + 1 * h, 7 * h, 2 * h);
+        cell_at(e, 3, x0 + 1 * h, y0 + 3 * h, 5 * h, h);
+        cell_at(e, 4, x0 + 2 * h, y0 + 4 * h, 3 * h, h);
+        cell_at(e, 5, x0 + 3 * h, y0 + 5 * h, 1 * h, h);
     }
+    if (g == GL_OPEN) lv_obj_clear_flag(eye_open[e], LV_OBJ_FLAG_HIDDEN);
+    else              lv_obj_add_flag(eye_open[e], LV_OBJ_FLAG_HIDDEN);
+}
+
+// One eye's shape. The box widens to hold a glyph before the glyph shows, so
+// it never draws clipped.
+static void set_glyph(int e, uint8_t g) {
+    if (glyph[e] == g) return;
+    glyph[e] = g;
+    apply_eyes();
+    layout_glyph(e, g);
+}
+
+static void set_squint(bool on) {
+    set_glyph(0, on ? GL_SQUINT : GL_OPEN);
+    set_glyph(1, on ? GL_SQUINT : GL_OPEN);
+}
+
+// Ends any expression and puts the eyes back to open and normal.
+static void expr_clear(void) {
+    expr_on = false;
+    eye_scale = 100;
+    set_glyph(0, GL_OPEN);
+    set_glyph(1, GL_OPEN);
+    apply_eyes();               // the scale back to normal even when both eyes were open already
 }
 
 static lv_obj_t* rect(lv_obj_t* parent, int x, int y, int w, int h, lv_color_t c) {
@@ -125,10 +184,9 @@ static void set_eye_objs(void* ctx) {
         const EyeBox& b = eye_next[e];
         const EyeBox& l = eye_last[e];
         if (b.w != l.w || b.h != l.h) lv_obj_set_size(eye_box[e], b.w, b.h);
-        if (b.ew != l.ew || b.eh != l.eh) {
-            lv_obj_set_size(eye_open[e], b.ew, b.eh);
-            lv_obj_set_pos(eye_open[e], squinting ? S(30) - b.ew / 2 : 0, 0);
-        }
+        if (b.ew != l.ew || b.eh != l.eh) lv_obj_set_size(eye_open[e], b.ew, b.eh);
+        if (b.g != l.g || b.ew != l.ew || b.eh != l.eh)
+            lv_obj_set_pos(eye_open[e], b.g != GL_OPEN ? S(30) - b.ew / 2 : 0, 0);
         if (b.x != l.x || b.y != l.y) lv_obj_set_pos(eye_box[e], b.x, b.y);
     }
 }
@@ -151,19 +209,25 @@ static void apply_eyes(void) {
     const int st = pose.stretch;
     int h = eye_h0 * (1000 + st) / 1000;
     int w = eye_w0 * 1000 / (1000 + st);
+    // Surprise and sleepy: the open eye's height by eye_scale, a surprised eye
+    // a little wider too.
+    h = h * eye_scale / 100;
+    if (eye_scale > 100) w = w * (100 + (eye_scale - 100) / 2) / 100;
+    if (h < 4) h = 4;
     h += h & 1; w += w & 1;
     for (int e = 0; e < 2; e++) {
         const int cx = eye_cx[e] + dx[e];
         const int cy = pose.y + eye_top + eye_h0 / 2 + pose.eye_dy;
         EyeBox& b = eye_next[e];
-        if (squinting) { b.x = cx - S(30); b.y = cy - eye_h0 / 2; b.w = box_w0; b.h = box_h0; b.ew = eye_w0; b.eh = eye_h0; b.solid = false; }
-        else           { b.x = cx - w / 2; b.y = cy - h / 2;      b.w = w;      b.h = h;      b.ew = w;      b.eh = h;      b.solid = true; }
+        b.g = glyph[e];
+        if (glyph[e] != GL_OPEN) { b.x = cx - glyph_cx(glyph[e]); b.y = cy - eye_h0 / 2; b.w = box_w0; b.h = box_h0; b.ew = eye_w0; b.eh = eye_h0; b.solid = false; }
+        else                     { b.x = cx - w / 2; b.y = cy - h / 2;      b.w = w;      b.h = h;      b.ew = w;      b.eh = h;      b.solid = true; }
     }
     bool changed = false, quiet = true;
     for (int e = 0; e < 2; e++) {
         const EyeBox& b = eye_next[e];
         const EyeBox& l = eye_last[e];
-        if (b.x != l.x || b.y != l.y || b.w != l.w || b.h != l.h || b.ew != l.ew || b.eh != l.eh)
+        if (b.x != l.x || b.y != l.y || b.w != l.w || b.h != l.h || b.ew != l.ew || b.eh != l.eh || b.g != l.g)
             changed = true;
         if (!b.solid || !l.solid) quiet = false;
     }
@@ -230,18 +294,12 @@ void face_init(void) {
         lv_obj_clear_flag(eye_box[e], LV_OBJ_FLAG_CLICKABLE);
         lv_obj_clear_flag(eye_box[e], LV_OBJ_FLAG_SCROLLABLE);
         eye_open[e] = rect(eye_box[e], S(8), 0, eye_w0, eye_h0, COL_EYE);
-        const int dir = e == 0 ? +1 : -1;      // left eye ">", right eye "<"
-        for (int i = 0; i < 5; i++) {
-            const int dx = (dir > 0 ? i : 4 - i) * u;
-            squint[e][i] = rect(eye_box[e], dx, S(20) + i * u, 2 * u, u, COL_EYE);
-            if (i < 4)
-                squint[e][5 + i] = rect(eye_box[e], dx, S(20) + (8 - i) * u, 2 * u, u, COL_EYE);
-        }
-        eye_last[e] = { INT32_MIN, 0, box_w0, box_h0, -1, -1, false };   // forces the first placement
+        for (int i = 0; i < 9; i++) squint[e][i] = rect(eye_box[e], 0, 0, 2 * u, u, COL_EYE);
+        layout_glyph(e, GL_OPEN);              // the cells hide until a shape wants them
+        eye_last[e] = { INT32_MIN, 0, box_w0, box_h0, -1, -1, false, GL_OPEN };   // forces the first placement
     }
     pose = gone_pose();
     place_eyes(0);
-    set_squint(false);
     clawd_rng_seed(&rng, millis() ^ 0xFACE);
 }
 
@@ -314,6 +372,7 @@ static void rise(int interest) {
     interest_g = interest;
     blink_phase = 0; glance_phase = 0;
     set_squint(false);
+    expr_clear();
     lv_anim_delete(&glance_cur, NULL);
     glance_cur = 0;
     start_motion(FACE_MOVE_RISE);
@@ -335,6 +394,7 @@ void face_drop(void) {
     // Eyes open and front-facing as it goes: he's looking at you, then away.
     blink_phase = 0;
     set_squint(false);
+    expr_clear();
     lv_anim_delete(&glance_cur, NULL);
     glance_phase = 0; glance_cur = 0;
     interest_g = 0;
@@ -349,15 +409,17 @@ void face_hide_now(void) {
     moving = false; resting = false;
     blink_phase = 0; glance_phase = 0; glance_cur = 0; interest_g = 0;
     set_squint(false);
+    expr_clear();
     rest_hidden();
 }
 
 bool face_visible(void) { return visible; }
 bool face_moving(void)  { return moving; }
-bool face_busy(void)    { return moving || blink_phase != 0 || glance_phase != 0; }
+bool face_busy(void)    { return moving || blink_phase != 0 || glance_phase != 0 || expr_on; }
 
 void face_blink(bool twice) {
     if (!visible) return;
+    if (expr_on) expr_clear();                // the noticing beat cuts an expression short
     blink_twice = twice;
     blink_phase = 1;
     blink_until = millis() + BLINK_MS;
@@ -417,6 +479,36 @@ static void glance_to(int target) {
     lv_anim_start(&a);
 }
 
+// Starts one of the rarer expressions: a shape swap (happy, heart, wink: the
+// wink closes only the right eye) or a timed scale (surprise, sleepy).
+static void expr_start_act(FaceAct a, uint32_t now) {
+    expr_on = true;
+    expr_act = a;
+    expr_start = now;
+    switch (a) {
+    case FACE_HAPPY: set_glyph(0, GL_HAPPY); set_glyph(1, GL_HAPPY); break;
+    case FACE_HEART: set_glyph(0, GL_HEART); set_glyph(1, GL_HEART); break;
+    case FACE_WINK:  set_glyph(1, GL_SQUINT); break;
+    default: break;                       // surprise, sleepy: expr_tick scales the eye
+    }
+}
+
+static void expr_tick(uint32_t now) {
+    const uint32_t ms = now - expr_start;
+    const uint32_t hold = face_expr_hold_ms(expr_act);
+    if (hold) {                           // a shape swap: back to open when the hold is up
+        if (ms >= hold) expr_clear();
+        return;
+    }
+    bool done = false;
+    const int pct = face_expr_scale_pct(expr_act, ms, &done);
+    if (done) { expr_clear(); return; }
+    if (pct != eye_scale) {
+        eye_scale = pct;
+        apply_eyes();
+    }
+}
+
 void face_tick(void) {
     if (!root || !visible) return;
     const uint32_t now = millis();
@@ -435,7 +527,8 @@ void face_tick(void) {
         glance_to(0);
     }
 
-    if (!resting || moving || blink_phase || glance_phase) return;
+    if (expr_on) expr_tick(now);
+    if (!resting || moving || blink_phase || glance_phase || expr_on) return;
     if ((int32_t)(now - next_act_at) < 0) return;
     const FacePlan p = face_plan_next(&rng, &clawd_tuning());
     switch (p.act) {
@@ -448,6 +541,21 @@ void face_tick(void) {
         glance_target = face_glance_px(p.act, glance_px, interest_g, &rng, &clawd_tuning());
         glance_to(glance_target);
         break;
+    default:                 expr_start_act(p.act, now); break;
     }
     next_act_at = now + p.gap_ms;
+}
+
+bool face_debug(const char* what) {
+    if (!root) return false;
+    FaceAct a;
+    if      (strcmp(what, "happy") == 0)    a = FACE_HAPPY;
+    else if (strcmp(what, "heart") == 0)    a = FACE_HEART;
+    else if (strcmp(what, "wink") == 0)     a = FACE_WINK;
+    else if (strcmp(what, "surprise") == 0) a = FACE_SURPRISE;
+    else if (strcmp(what, "sleepy") == 0)   a = FACE_SLEEPY;
+    else return false;
+    if (!visible || moving || blink_phase || glance_phase) return false;
+    expr_start_act(a, millis());
+    return true;
 }

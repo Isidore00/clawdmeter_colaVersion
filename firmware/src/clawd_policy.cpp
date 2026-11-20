@@ -273,11 +273,56 @@ FacePlan face_plan_next(ClawdRng* r, const ClawdTuning* t) {
     FacePlan p;
     p.gap_ms = clawd_rng_range(r, t->blink_min_ms, t->blink_max_ms);
     const uint32_t roll = clawd_rng_next(r) % 100;
-    if (roll < 45)       p.act = FACE_BLINK;
-    else if (roll < 57)  p.act = FACE_DOUBLE_BLINK;     // ~1 in 5 blinks is double
-    else if (roll < 79)  p.act = FACE_GLANCE_LEFT;
-    else                 p.act = FACE_GLANCE_RIGHT;
+    if (roll < 36)       p.act = FACE_BLINK;
+    else if (roll < 46)  p.act = FACE_DOUBLE_BLINK;     // ~1 in 4 blinks is double
+    else if (roll < 61)  p.act = FACE_GLANCE_LEFT;
+    else if (roll < 76)  p.act = FACE_GLANCE_RIGHT;
+    else if (roll < 82)  p.act = FACE_HAPPY;
+    else if (roll < 87)  p.act = FACE_SLEEPY;
+    else if (roll < 91)  p.act = FACE_SURPRISE;
+    else if (roll < 96)  p.act = FACE_WINK;
+    else                 p.act = FACE_HEART;
     return p;
+}
+
+uint32_t face_expr_hold_ms(FaceAct act) {
+    switch (act) {
+    case FACE_HAPPY: return 1500;
+    case FACE_HEART: return 1800;
+    case FACE_WINK:  return 450;
+    default:         return 0;
+    }
+}
+
+// Linear ramp from `a` to `b` as `ms` goes from `t0` to `t1`.
+static int ramp(int a, int b, uint32_t ms, uint32_t t0, uint32_t t1) {
+    if (ms <= t0) return a;
+    if (ms >= t1) return b;
+    return a + (int)((int32_t)(b - a) * (int32_t)(ms - t0) / (int32_t)(t1 - t0));
+}
+
+int face_expr_scale_pct(FaceAct act, uint32_t ms, bool* done) {
+    bool over = false;
+    int pct = 100;
+    if (act == FACE_SURPRISE) {
+        // Wide in 120 ms, held, back by 1.3 s.
+        if (ms >= 1300)      { over = true; }
+        else if (ms >= 1020) pct = ramp(135, 100, ms, 1020, 1300);
+        else                 pct = ramp(100, 135, ms, 0, 120);
+    } else if (act == FACE_SLEEPY) {
+        // Lids droop slowly, jerk up, droop again, then open: 2.1 s.
+        if (ms >= 2100)      { over = true; }
+        else if (ms >= 1900) pct = ramp(18, 100, ms, 1900, 2100);
+        else if (ms >= 1400) pct = 18;
+        else if (ms >= 1180) pct = ramp(70, 18, ms, 1180, 1400);
+        else if (ms >= 1100) pct = ramp(18, 70, ms, 1100, 1180);
+        else if (ms >= 700)  pct = 18;
+        else                 pct = ramp(100, 18, ms, 0, 700);
+    } else {
+        over = true;
+    }
+    if (done) *done = over;
+    return pct;
 }
 
 int face_glance_px(FaceAct act, int glance_px, int tap_g, ClawdRng* r, const ClawdTuning* t) {

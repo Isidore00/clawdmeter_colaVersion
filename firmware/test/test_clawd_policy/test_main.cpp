@@ -106,20 +106,57 @@ static void test_jitter_stays_within_40_percent(void) {
 
 static void test_face_rhythm_is_irregular_with_some_double_blinks(void) {
     ClawdRng r; clawd_rng_seed(&r, 1234);
-    int blinks = 0, doubles = 0, glances = 0;
+    int blinks = 0, doubles = 0, glances = 0, extras = 0;
+    int seen[FACE_SLEEPY + 1] = {};
     uint32_t gmin = 0xFFFFFFFF, gmax = 0;
     for (int i = 0; i < 1000; i++) {
         FacePlan p = face_plan_next(&r, &T);
         if (p.gap_ms < gmin) gmin = p.gap_ms;
         if (p.gap_ms > gmax) gmax = p.gap_ms;
+        seen[p.act]++;
         if (p.act == FACE_BLINK) blinks++;
         else if (p.act == FACE_DOUBLE_BLINK) doubles++;
-        else glances++;
+        else if (p.act == FACE_GLANCE_LEFT || p.act == FACE_GLANCE_RIGHT) glances++;
+        else extras++;
     }
     TEST_ASSERT_TRUE(gmin >= 2000 && gmax <= 6000);
     TEST_ASSERT_TRUE(gmax - gmin > 3000);
     TEST_ASSERT_TRUE(doubles > 50 && doubles < blinks);   // occasional, not the norm
     TEST_ASSERT_TRUE(glances > 200);
+    // The five expressions turn up, but they stay the exception.
+    TEST_ASSERT_TRUE(extras > 150 && extras < 350);
+    for (int a = 0; a <= FACE_SLEEPY; a++) TEST_ASSERT_TRUE(seen[a] > 10);
+}
+
+static void test_face_expressions_hold_and_scale(void) {
+    TEST_ASSERT_TRUE(face_expr_hold_ms(FACE_HAPPY) > 0);
+    TEST_ASSERT_TRUE(face_expr_hold_ms(FACE_HEART) > 0);
+    TEST_ASSERT_TRUE(face_expr_hold_ms(FACE_WINK) > 0);
+    TEST_ASSERT_EQUAL_UINT32(0, face_expr_hold_ms(FACE_SURPRISE));
+    bool done = true;
+    // Surprise: starts at normal, goes wide, comes back and ends.
+    TEST_ASSERT_EQUAL_INT(100, face_expr_scale_pct(FACE_SURPRISE, 0, &done));
+    TEST_ASSERT_FALSE(done);
+    TEST_ASSERT_EQUAL_INT(135, face_expr_scale_pct(FACE_SURPRISE, 500, &done));
+    TEST_ASSERT_EQUAL_INT(100, face_expr_scale_pct(FACE_SURPRISE, 1300, &done));
+    TEST_ASSERT_TRUE(done);
+    // Sleepy: lids to 18 %, a jerk up, down again, open, and ends.
+    TEST_ASSERT_EQUAL_INT(18, face_expr_scale_pct(FACE_SLEEPY, 900, &done));
+    TEST_ASSERT_EQUAL_INT(70, face_expr_scale_pct(FACE_SLEEPY, 1180, &done));
+    TEST_ASSERT_EQUAL_INT(18, face_expr_scale_pct(FACE_SLEEPY, 1600, &done));
+    TEST_ASSERT_FALSE(done);
+    TEST_ASSERT_EQUAL_INT(100, face_expr_scale_pct(FACE_SLEEPY, 2100, &done));
+    TEST_ASSERT_TRUE(done);
+    // Never below 18 % or above 135 % in between.
+    for (uint32_t ms = 0; ms < 2200; ms += 10) {
+        const int s = face_expr_scale_pct(FACE_SLEEPY, ms, &done);
+        TEST_ASSERT_TRUE(s >= 18 && s <= 100);
+        const int w = face_expr_scale_pct(FACE_SURPRISE, ms, &done);
+        TEST_ASSERT_TRUE(w >= 100 && w <= 135);
+    }
+    // Shape-swap acts have no scale: over at once.
+    TEST_ASSERT_EQUAL_INT(100, face_expr_scale_pct(FACE_HAPPY, 100, &done));
+    TEST_ASSERT_TRUE(done);
 }
 
 static void test_far_eye_travels_further(void) {
@@ -390,6 +427,7 @@ int main(int, char**) {
     RUN_TEST(test_pick_never_repeats);
     RUN_TEST(test_jitter_stays_within_40_percent);
     RUN_TEST(test_face_rhythm_is_irregular_with_some_double_blinks);
+    RUN_TEST(test_face_expressions_hold_and_scale);
     RUN_TEST(test_far_eye_travels_further);
     RUN_TEST(test_show_group_uses_base_rate_floored_at_active);
     RUN_TEST(test_show_variety_is_reachable_and_never_repeats);
