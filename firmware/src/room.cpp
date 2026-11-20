@@ -9,6 +9,7 @@
 #include "idle.h"
 #include "hal/board_caps.h"
 #include <Arduino.h>
+#include <Preferences.h>
 #include <string.h>
 #include <esp_heap_caps.h>
 
@@ -25,6 +26,14 @@
 #include "hal/sound_hal.h"
 static_assert(ROOM_VOICE_N == RV_COUNT, "room_voice_assets.h and RoomVoice drifted");
 #endif
+
+// The voice switch: a small speaker badge in the top-left corner of the page;
+// a tap on it turns her lines on or off, and the choice is kept in NVS
+// (clawdmeter/room_voice, on by default). Room pixels, like everything here.
+#define VOICE_BTN_X    8
+#define VOICE_BTN_Y    8
+#define VOICE_BTN_SIZE 44
+#define VOICE_BTN_HIT  64          // the tap area, a bit bigger than the badge
 
 // Where her feet are on the rug (room pixels, 480x480).
 #define FEET_X 240
@@ -62,6 +71,10 @@ static uint8_t*  bgbuf = NULL;               // RGB565 480x480 (PSRAM)
 static uint8_t*  scratch = NULL;             // decompressed indices of what's being drawn (PSRAM)
 static uint8_t*  spbuf = NULL;               // sprite: RGB565 plane, then alpha plane (PSRAM)
 static lv_image_dsc_t bg_dsc, sp_dsc;
+
+static lv_obj_t* voice_badge = NULL;         // the speaker badge, and the slash over it while muted
+static lv_obj_t* voice_slash = NULL;
+static bool      voice_on = true;            // her lines are on (the NVS switch)
 
 static RoomBrain brain;
 static bool      visible = false;
@@ -111,6 +124,7 @@ static void place_sprite(RoomAct a) {
 static void apply_shift(void) {
     room_shift_for_step(shift_step, &shift_x, &shift_y);
     lv_obj_set_pos(bg_img, off_x + shift_x, off_y + shift_y);
+    if (voice_badge) lv_obj_set_pos(voice_badge, off_x + shift_x + VOICE_BTN_X, off_y + shift_y + VOICE_BTN_Y);
     place_sprite((RoomAct)brain.act);
 }
 
@@ -139,7 +153,7 @@ static RoomTone current_tone(void) {
 // down, and nothing if the ding has the speaker. True if it started.
 static bool say(RoomVoice v) {
 #if ROOM_VOICE
-    if (!visible || (unsigned)v >= RV_COUNT) return false;
+    if (!visible || !voice_on || (unsigned)v >= RV_COUNT) return false;
     return sound_hal_voice(room_voices[v].adpcm, room_voices[v].samples, room_voices[v].rate);
 #else
     (void)v;
@@ -334,6 +348,45 @@ static void show(bool on) {
     Serial.printf("{\"room\":\"%s\"}\n", on ? "on" : "off");
 }
 
+// ---- the voice switch ----------------------------------------------------
+static void voice_load(void) {
+    Preferences prefs;
+    prefs.begin("clawdmeter", true);
+    voice_on = prefs.getBool("room_voice", true);
+    prefs.end();
+}
+
+static void voice_save(void) {
+    Preferences prefs;
+    prefs.begin("clawdmeter", false);
+    prefs.putBool("room_voice", voice_on);
+    prefs.end();
+}
+
+// The badge shows the state: a speaker with sound waves, and a red slash over
+// it while her lines are off.
+static void voice_badge_update(void) {
+    if (!voice_slash) return;
+    if (voice_on) lv_obj_add_flag(voice_slash, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(voice_slash, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Turns her lines on or off for good (NVS); off cuts a line that is playing.
+static void voice_set(bool on) {
+    if (on == voice_on) return;
+    voice_on = on;
+    if (!voice_on) sound_stop_voice();
+    voice_save();
+    voice_badge_update();
+    Serial.printf("{\"room_voice\":%s}\n", voice_on ? "true" : "false");
+}
+
+static bool voice_hit(int x, int y) {
+    const int cx = off_x + shift_x + VOICE_BTN_X + VOICE_BTN_SIZE / 2;
+    const int cy = off_y + shift_y + VOICE_BTN_Y + VOICE_BTN_SIZE / 2;
+    return abs(x - cx) <= VOICE_BTN_HIT / 2 && abs(y - cy) <= VOICE_BTN_HIT / 2;
+}
+
 // Her box: the sprite, or the scene's patch while she's part of it.
 static void her_box(int* ox0, int* oy0, int* ox1, int* oy1) {
     int x0, y0, x1, y1;
@@ -391,7 +444,8 @@ static void indev_cb(lv_event_t* e) {
         if (!visible && dx < 0) show(true);
         else if (visible && dx > 0) show(false);
     } else if (visible && abs(dx) <= TAP_MAX_MOVE && abs(dy) <= TAP_MAX_MOVE && dt <= TAP_MAX_MS) {
-        if (hit(press_pt.x, press_pt.y)) { poke_pending = true; poke_kind = -1; }
+        if (voice_hit(press_pt.x, press_pt.y)) voice_set(!voice_on);
+        else if (hit(press_pt.x, press_pt.y)) { poke_pending = true; poke_kind = -1; }
     }
 }
 
@@ -420,6 +474,48 @@ void room_create(lv_obj_t* parent) {
     lv_obj_clear_flag(sp_img, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_pos(sp_img, off_x + FEET_X - ROOM_POSE_W / 2, off_y + FEET_Y - ROOM_POSE_GROUND);
     lv_obj_set_size(sp_img, ROOM_POSE_W, ROOM_POSE_H);
+
+    // The voice badge: a dim round plate, a speaker drawn from a box, a cone
+    // and a wave, and a slash that shows while she's muted. Plain LVGL shapes.
+    static const lv_point_precise_t cone_pts[] = { {18, 17}, {26, 10}, {26, 34}, {18, 27}, {18, 17} };
+    static const lv_point_precise_t wave_pts[] = { {31, 17}, {34, 22}, {31, 27} };
+    static const lv_point_precise_t slash_pts[] = { {9, 9}, {35, 35} };
+    voice_badge = lv_obj_create(root);
+    lv_obj_remove_style_all(voice_badge);
+    lv_obj_set_size(voice_badge, VOICE_BTN_SIZE, VOICE_BTN_SIZE);
+    lv_obj_set_pos(voice_badge, off_x + VOICE_BTN_X, off_y + VOICE_BTN_Y);
+    lv_obj_set_style_radius(voice_badge, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(voice_badge, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(voice_badge, LV_OPA_40, 0);
+    lv_obj_clear_flag(voice_badge, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(voice_badge, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* box = lv_obj_create(voice_badge);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_size(box, 8, 10);
+    lv_obj_set_pos(box, 10, 17);
+    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_80, 0);
+    lv_obj_clear_flag(box, LV_OBJ_FLAG_CLICKABLE);
+    const struct { const lv_point_precise_t* pts; uint32_t n; } lines[] = {
+        { cone_pts, 5 }, { wave_pts, 3 },
+    };
+    for (const auto& l : lines) {
+        lv_obj_t* ln = lv_line_create(voice_badge);
+        lv_line_set_points(ln, l.pts, l.n);
+        lv_obj_set_style_line_width(ln, 2, 0);
+        lv_obj_set_style_line_color(ln, lv_color_white(), 0);
+        lv_obj_set_style_line_opa(ln, LV_OPA_80, 0);
+        lv_obj_set_style_line_rounded(ln, true, 0);
+        lv_obj_clear_flag(ln, LV_OBJ_FLAG_CLICKABLE);
+    }
+    voice_slash = lv_line_create(voice_badge);
+    lv_line_set_points(voice_slash, slash_pts, 2);
+    lv_obj_set_style_line_width(voice_slash, 3, 0);
+    lv_obj_set_style_line_color(voice_slash, lv_color_make(0xE0, 0x44, 0x3C), 0);
+    lv_obj_set_style_line_rounded(voice_slash, true, 0);
+    lv_obj_clear_flag(voice_slash, LV_OBJ_FLAG_CLICKABLE);
+    voice_load();
+    voice_badge_update();
 
     lv_indev_t* touch = lv_indev_get_next(NULL);
     if (touch) {
@@ -511,11 +607,16 @@ bool room_debug(const char* what) {
     if (strcmp(what, "status") == 0) {
         const RoomTone t = current_tone();
         Serial.printf("{\"room\":{\"visible\":%s,\"act\":\"%s\",\"frame\":%d,\"tone\":\"%s\","
-                      "\"clock\":%s,\"forced\":%s,\"voice\":%s}}\n",
+                      "\"clock\":%s,\"forced\":%s,\"voice\":%s,\"voice_on\":%s}}\n",
                       visible ? "true" : "false", room_act_name(brain.act), brain.frame,
                       room_tone_name(t), have_clock ? "true" : "false", forced >= 0 ? "true" : "false",
-                      ROOM_VOICE ? "true" : "false");
+                      ROOM_VOICE ? "true" : "false", voice_on ? "true" : "false");
         return true;
+    }
+    if (strncmp(what, "voice ", 6) == 0) {      // `room voice on|off`: her lines, kept across reboots
+        if (strcmp(what + 6, "on") == 0)  { voice_set(true);  return true; }
+        if (strcmp(what + 6, "off") == 0) { voice_set(false); return true; }
+        return false;
     }
     if (strncmp(what, "say ", 4) == 0) {         // `room say <name>`: one of her lines, now
         const RoomVoice v = room_voice_from_name(what + 4);
