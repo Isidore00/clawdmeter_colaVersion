@@ -33,6 +33,15 @@ void clawd_tuning_defaults(ClawdTuning* t) {
     t->idle_gap_pct      = 100;
     t->verb_ms           = 4 * SEC;
     t->spinner           = true;
+    t->face_without_link = false;
+#if CLAWD_COLA
+    // The cola builds keep the face up as the resting screen: it comes up
+    // after 30 s of quiet, with or without the app, a peek stays until you
+    // tap it, and the panel sleeps after 10 min (idle_cfg.h) to rest the AMOLED.
+    t->quiet_ms          = 30 * SEC;
+    t->peek_curious_ms   = 0;
+    t->face_without_link = true;
+#endif
 }
 
 void clawd_tuning_fast(ClawdTuning* t) {
@@ -197,8 +206,11 @@ void show_gate_mark_shown(ShowGate* g, uint32_t now) {
 
 // ─── Screensaver gate ────────────────────────────────────────────────────────
 bool screensaver_ready(const QuietInput* in, const ClawdTuning* t) {
-    if (!t->screensaver || !in->meters_live) return false;
-    if (!in->hooks_seen && !in->window_not_started) return false;
+    if (!t->screensaver) return false;
+    if (!t->face_without_link) {
+        if (!in->meters_live) return false;
+        if (!in->hooks_seen && !in->window_not_started) return false;
+    }
     return (uint32_t)(in->now - in->last_engagement) >= t->quiet_ms;
 }
 
@@ -249,6 +261,7 @@ TapReact clawd_tap_react(const TapInput* in) {
 }
 
 PeekHold peek_hold(uint32_t up_since, uint32_t now, const ClawdTuning* t) {
+    if (t->peek_curious_ms == 0) return PEEK_HOLD_KEEP;
     return (uint32_t)(now - up_since) >= t->peek_curious_ms ? PEEK_HOLD_DONE : PEEK_HOLD_KEEP;
 }
 

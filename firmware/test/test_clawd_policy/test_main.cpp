@@ -52,6 +52,24 @@ static void test_screensaver_after_ten_quiet_minutes_with_hooks(void) {
     TEST_ASSERT_FALSE(screensaver_ready(&q, &T));
 }
 
+static void test_face_without_link_needs_only_quiet(void) {
+    ClawdTuning t = T;
+    t.face_without_link = true;
+    QuietInput q = { 10 * MIN, 0, false, false, false };   // no app, no hooks
+    TEST_ASSERT_TRUE(screensaver_ready(&q, &t));
+    q.now = 10 * MIN - 1;
+    TEST_ASSERT_FALSE(screensaver_ready(&q, &t));
+    t.screensaver = false;                                   // liveliness 1 still rules it out
+    q.now = 10 * MIN;
+    TEST_ASSERT_FALSE(screensaver_ready(&q, &t));
+}
+
+static void test_peek_curious_zero_stays_up(void) {
+    ClawdTuning t = T;
+    t.peek_curious_ms = 0;
+    TEST_ASSERT_EQUAL_INT(PEEK_HOLD_KEEP, peek_hold(0, 24UL * 60 * MIN, &t));
+}
+
 static void test_screensaver_without_hooks_only_for_unstarted_window(void) {
     QuietInput q = { 30 * MIN, 0, false, false, true };
     TEST_ASSERT_FALSE(screensaver_ready(&q, &T));  // old daemon: slow clock only
@@ -422,6 +440,8 @@ int main(int, char**) {
     RUN_TEST(test_at_most_one_show_per_15_minutes);
     RUN_TEST(test_screensaver_after_ten_quiet_minutes_with_hooks);
     RUN_TEST(test_screensaver_without_hooks_only_for_unstarted_window);
+    RUN_TEST(test_face_without_link_needs_only_quiet);
+    RUN_TEST(test_peek_curious_zero_stays_up);
     RUN_TEST(test_engagement_wraps_safely);
     RUN_TEST(test_long_turn_earns_a_wave);
     RUN_TEST(test_pick_never_repeats);

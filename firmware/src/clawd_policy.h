@@ -27,7 +27,7 @@ struct ClawdTuning {
     uint32_t peek_look_min_ms;   // the peeking face holds its look toward the tap (min..max),
                                  // then rests, curious (peek_hold)
     uint32_t peek_look_max_ms;
-    uint32_t peek_curious_ms;    // the peek's face stays up this long, then goes back on its own
+    uint32_t peek_curious_ms;    // the peek's face stays up this long, then goes back on its own (0: until tapped)
     uint8_t  peek_double_pct;    // chance the peek's blink is a double
     uint8_t  peek_toward_pct;    // chance a curious resting glance goes back toward the tap
 
@@ -35,6 +35,7 @@ struct ClawdTuning {
     // clawd_tuning_scaled). Taps and alerts always get their reaction.
     bool     shows;              // earned shows happen
     bool     screensaver;        // the face comes up when you're away
+    bool     face_without_link;  // the face may come up and stay with no live data (no app, stale)
     bool     idle_acts;          // corner autonomy: idle acts and lurk trips
     bool     reactions;          // noticing a prompt, the long-turn wave, fresh-window joy
     uint8_t  show_min_activity;  // activity level (0-3) whose stretch earns a show
@@ -135,6 +136,8 @@ struct QuietInput {
     bool     window_not_started;
     bool     meters_live;       // fresh data on the meters (not pairing / stale)
 };
+// With face_without_link (the cola builds) neither the live meters nor the
+// hooks are needed: quiet is only no taps, buttons or app activity.
 bool screensaver_ready(const QuietInput* in, const ClawdTuning* t);
 
 // ─── Turn tracker ────────────────────────────────────────────────────────────
