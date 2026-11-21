@@ -307,6 +307,11 @@ void setup() {
     // the ipc task, whose stack is 1 KB, and an interrupt landing mid-install
     // can overflow it (a boot panic, #264); this early, that is rare.
     // attachInterrupt() accepts the service already being installed.
+    // The ipc task's stack is that small, and the install is done in a few tens
+    // of microseconds: start it right after a tick, so the next tick (which
+    // would nest on that stack) is a millisecond away. Without this the boot
+    // panicked on some builds, depending on where the tick happened to land.
+    delay(1);
     gpio_install_isr_service(ARDUINO_ISR_FLAG);
 
     Serial.begin(115200);
