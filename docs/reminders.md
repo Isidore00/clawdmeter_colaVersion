@@ -7,9 +7,9 @@ rows in the list.
 
 | Program | When | What you see and hear |
 | --- | --- | --- |
-| `water` | every 15 min, Monday to Friday, 08:00 to 20:00 (the last at 19:45) | the ding, then her drink line; on the room page she drinks, elsewhere the face comes up and drinks through a straw |
+| `water` | every 15 min, every day of the week, 08:00 to 20:00 (the last at 19:45) | the ding, then her drink line; on the room page she drinks, elsewhere the face comes up and drinks through a straw |
 
-Settings are fixed in the firmware for now (`REMINDER_PROGRAMS`,
+The schedule is fixed in the firmware for now (`REMINDER_PROGRAMS`,
 `reminder_policy.cpp`); app settings would need protocol keys on both sides.
 
 ## How it works
@@ -76,6 +76,7 @@ finger lifts, if it stayed within 24 px.
 | Command | |
 | --- | --- |
 | `remind water` | that reminder now (any day, any time) |
+| `remind on\|off` | the reminders' switch: off stops all of them (one that is up ends), on starts again at the next quarter hour. Kept in NVS (`clawdmeter/remind_on`, on by default); the desktop app's Water reminder switch (`rm`) sets it again on every data payload, so a serial change lasts only until the next one |
 | `remind stop` | end it as if answered |
 | `remind status` | clock known, weekday (0 Sunday), minute of the day, whether one is up, and when each program next fires |
 | `room voice on\|off` | her lines (also what the long press switches) |

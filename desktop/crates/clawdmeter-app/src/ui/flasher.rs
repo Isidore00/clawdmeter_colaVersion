@@ -23,6 +23,7 @@ use super::theme::{Theme, FONT_DISPLAY, FONT_MONO, R_M, R_PILL, R_S};
 use super::widgets::{bar, button, caption, card, clawd, icon, kv, notice, para, pill, ButtonKind, Tone};
 use super::{command, live_status, run_blocking, Navigate, REFRESH};
 use crate::boards::{self, BoardInfo};
+use crate::i18n::{tr, trf};
 use crate::ipc::{self, AppCommand, FirmwareRecord};
 use crate::Page;
 
@@ -61,11 +62,11 @@ impl Source {
 /// Read a local release folder's manifest.json.
 fn load_local(path: &std::path::Path) -> Result<Source, (String, bool)> {
     std::fs::read_to_string(path)
-        .map_err(|e| format!("Couldn't open {}. {}", path.display(), crate::errors::io_message(&e)))
+        .map_err(|e| trf("Couldn't open {1}. {2}", &[&path.display().to_string(), &crate::errors::io_message(&e)]))
         .and_then(|s| {
             Manifest::parse(&s).map_err(|e| {
                 log::warn!("{}: {e}", path.display());
-                "This file isn't a valid Clawdmeter release manifest.".to_string()
+                tr("This file isn't a valid Clawdmeter release manifest.").to_string()
             })
         })
         .map(|manifest| Source::Local { dir: path.parent().map(PathBuf::from).unwrap_or_default(), manifest })
@@ -231,8 +232,8 @@ pub fn shop(t: &Theme) -> impl IntoElement {
                 .on_click(move |_, _, cx| cx.open_url(url))
                 .child(board_art(b, 120., 110.))
                 .child(div().text_size(px(13.5)).child(b.name))
-                .child(div().text_size(px(11.5)).text_color(t.mute).child(b.summary))
-                .child(div().pt(px(4.)).text_size(px(12.5)).text_color(t.accent).child("Buy ↗")),
+                .child(div().text_size(px(11.5)).text_color(t.mute).child(tr(b.summary)))
+                .child(div().pt(px(4.)).text_size(px(12.5)).text_color(t.accent).child(tr("Buy ↗"))),
         );
     }
     grid
@@ -372,7 +373,7 @@ impl FlasherView {
                     let custom = repo != clawdmeter_flash::DEFAULT_RELEASE_REPO;
                     let none_yet = matches!(e, release::ReleaseError::NoRelease);
                     let msg = match (none_yet, custom) {
-                        (true, true) => format!("No firmware release was found in {repo}."),
+                        (true, true) => trf("No firmware release was found in {1}.", &[&repo]),
                         _ => e.to_string(),
                     };
                     (msg, none_yet)
@@ -482,10 +483,10 @@ impl FlasherView {
                             }
                             Identification::Choose(envs) => v.candidates = envs,
                             Identification::Unsupported(c) => {
-                                v.error = Some(format!(
-                                    "This board has an {}{}. None of the boards in this release match it.",
-                                    device::pretty_chip(&c.chip),
-                                    c.flash_mb.map(|m| format!(" with {m} MB of flash")).unwrap_or_default()
+                                let flash = c.flash_mb.map(|m| trf(" with {1} MB of flash", &[&m.to_string()]));
+                                v.error = Some(trf(
+                                    "This board has an {1}{2}. None of the boards in this release match it.",
+                                    &[&device::pretty_chip(&c.chip), &flash.unwrap_or_default()],
                                 ))
                             }
                         }
@@ -521,9 +522,9 @@ impl FlasherView {
                         std::fs::read(dir.join(name))
                             .map_err(|e| match e.kind() {
                                 std::io::ErrorKind::NotFound => {
-                                    format!("Place {} in the same folder as manifest.json.", board.file)
+                                    trf("Place {1} in the same folder as manifest.json.", &[&board.file])
                                 }
-                                _ => format!("Couldn't read {}. {}", board.file, crate::errors::io_message(&e)),
+                                _ => trf("Couldn't read {1}. {2}", &[&board.file, &crate::errors::io_message(&e)]),
                             })
                             .and_then(|d| release::verify(&board, &d).map(|_| d).map_err(|e| e.to_string()))
                     }
@@ -563,24 +564,24 @@ impl FlasherView {
         self.progress = 0.;
         self.error = None;
         self.log = vec![
-            format!("USB port: {port}"),
-            format!("{} ({:.1} MB), checksum verified", board.file, data.len() as f32 / 1_048_576.),
+            trf("USB port: {1}", &[&port]),
+            trf("{1} ({2} MB), checksum verified", &[&board.file, &format!("{:.1}", data.len() as f32 / 1_048_576.)]),
         ];
         let (tx, mut rx) = futures::channel::mpsc::unbounded::<FlashMsg>();
         let hw = self.hw.clone();
         cx.background_executor()
             .spawn(async move {
-                let _ = tx.unbounded_send(FlashMsg::Log("Restarting the board into its bootloader…".into()));
+                let _ = tx.unbounded_send(FlashMsg::Log(tr("Restarting the board into its bootloader…").to_string()));
                 let mut total = data.len().max(1);
                 let r = hw.flash(&port, &data, &board, &mut |p| {
                     let m = match p {
                         FlashProgress::Start { total: t } => {
                             total = t.max(1);
-                            FlashMsg::Log(format!("Writing {:.1} MB…", t as f32 / 1_048_576.))
+                            FlashMsg::Log(trf("Writing {1} MB…", &[&format!("{:.1}", t as f32 / 1_048_576.)]))
                         }
                         FlashProgress::Write { done } => FlashMsg::Progress(done as f32 / total as f32),
-                        FlashProgress::Verify => FlashMsg::Log("Verifying firmware…".into()),
-                        FlashProgress::Done => FlashMsg::Log("Restarting the board…".into()),
+                        FlashProgress::Verify => FlashMsg::Log(tr("Verifying firmware…").to_string()),
+                        FlashProgress::Done => FlashMsg::Log(tr("Restarting the board…").to_string()),
                     };
                     let _ = tx.unbounded_send(m);
                 });
@@ -600,7 +601,7 @@ impl FlasherView {
                         FlashMsg::Finished(Ok(())) => {
                             v.flashing = false;
                             v.progress = 1.;
-                            v.log.push("Firmware installed".into());
+                            v.log.push(tr("Firmware installed").to_string());
                             let ver = version.trim_start_matches('v').to_owned();
                             let _ = ipc::save_firmware_record(&v.paths, &FirmwareRecord { env, ver });
                             command(&v.paths, AppCommand::Reconnect);
@@ -609,7 +610,7 @@ impl FlasherView {
                         }
                         FlashMsg::Finished(Err(e)) => {
                             v.flashing = false;
-                            v.log.push("Installation stopped.".into());
+                            v.log.push(tr("Installation stopped.").to_string());
                             v.error = Some(e);
                         }
                     }
@@ -675,7 +676,7 @@ impl FlasherView {
                     .text_size(px(12.5))
                     .text_color(if on || done { t.text } else { t.mute })
                     .child(div().size(px(8.)).rounded(px(R_PILL)).bg(c))
-                    .child(*s),
+                    .child(tr(*s)),
             );
         }
         row
@@ -689,7 +690,7 @@ impl FlasherView {
         };
         let (me1, me2) = (cx.entity().downgrade(), cx.entity().downgrade());
         let text = if none_yet {
-            format!("{msg} If you have a release folder, open its manifest.json to flash from it.")
+            trf("{1} If you have a release folder, open its manifest.json to flash from it.", &[tr(msg).as_ref()])
         } else {
             msg
         };
@@ -718,7 +719,7 @@ impl FlasherView {
             .gap(px(12.))
             .pt(px(18.))
             .child(clawd(4.))
-            .child(div().font_family(FONT_DISPLAY).text_size(px(22.)).child("Connect your board"))
+            .child(div().font_family(FONT_DISPLAY).text_size(px(22.)).child(tr("Connect your board")))
             .child(
                 div()
                     .max_w(px(420.))
@@ -739,7 +740,7 @@ impl FlasherView {
                         v.shop = !v.shop;
                         cx.notify();
                     }))
-                    .child(if shop_open { "Hide supported boards" } else { "View supported boards" }),
+                    .child(tr(if shop_open { "Hide supported boards" } else { "View supported boards" })),
             );
         if shop_open {
             d = d.child(div().pt(px(4.)).child(shop(t)));
@@ -752,7 +753,7 @@ impl FlasherView {
 
     fn identify_view(&mut self, t: &Theme, cx: &mut Context<Self>) -> gpui::Div {
         let chip_text = match (&self.info, &self.chip) {
-            (Some(i), _) => format!("Running Clawdmeter {}", i.ver),
+            (Some(i), _) => trf("Running Clawdmeter {1}", &[&i.ver]),
             (None, Some(c)) => format!(
                 "{} · {}{}",
                 c.chip.to_uppercase().replace("ESP32", "ESP32-"),
@@ -768,10 +769,10 @@ impl FlasherView {
                 .flex()
                 .items_center()
                 .justify_between()
-                .child(div().font_family(FONT_DISPLAY).text_size(px(20.)).child(heading))
+                .child(div().font_family(FONT_DISPLAY).text_size(px(20.)).child(tr(heading)))
                 .when(self.probing || !chip_text.is_empty(), |d| {
                     let (text, tone) = if self.probing {
-                        ("Identifying board…".to_string(), Tone::Accent)
+                        (tr("Identifying board…").to_string(), Tone::Accent)
                     } else {
                         (chip_text, Tone::Ok)
                     };
@@ -791,11 +792,11 @@ impl FlasherView {
         let up_to_date = self.up_to_date();
         let hint = match (&self.info, self.candidates.len()) {
             (Some(_), _) if up_to_date => {
-                format!("Firmware is up to date ({latest}). Continue, or reinstall if needed.")
+                trf("Firmware is up to date ({1}). Continue, or reinstall if needed.", &[&latest])
             }
-            (Some(_), _) => "Board identified from its Clawdmeter firmware.".to_string(),
-            (None, 1) => "One board in this release matches the detected chip.".to_string(),
-            (None, n) if n > 1 => format!("{n} boards match this chip. Select the model on your desk."),
+            (Some(_), _) => tr("Board identified from its Clawdmeter firmware.").to_string(),
+            (None, 1) => tr("One board in this release matches the detected chip.").to_string(),
+            (None, n) if n > 1 => trf("{1} boards match this chip. Select the model on your desk.", &[&n.to_string()]),
             _ => String::new(),
         };
         if !hint.is_empty() {
@@ -848,7 +849,7 @@ impl FlasherView {
                         None => div().h(px(110.)).flex().items_center().child(clawd(2.)).into_any_element(),
                     })
                     .child(div().text_size(px(13.5)).text_center().child(name))
-                    .child(div().text_size(px(11.5)).text_color(t.mute).text_center().child(summary)),
+                    .child(div().text_size(px(11.5)).text_color(t.mute).text_center().child(tr(summary))),
             );
         }
         d = d.child(grid);
@@ -915,7 +916,7 @@ impl FlasherView {
         // that gets cut off.
         let from: SharedString = source.as_ref().map_or_else(|| "–".to_owned(), |s| s.label(&home)).into();
         let state: SharedString = match (&self.image, &source) {
-            (None, Some(_)) => format!("Downloading… {:.0}%", self.download * 100.).into(),
+            (None, Some(_)) => trf("Downloading… {1}%", &[&format!("{:.0}", self.download * 100.)]).into(),
             (Some(Ok(_)), Some(_)) => "Checksum verified".into(),
             (Some(Err(_)), Some(_)) => "Failed".into(),
             _ => "–".into(),
@@ -929,7 +930,7 @@ impl FlasherView {
             .flex()
             .flex_col()
             .gap(px(14.))
-            .child(div().font_family(FONT_DISPLAY).text_size(px(20.)).child(title))
+            .child(div().font_family(FONT_DISPLAY).text_size(px(20.)).child(tr(title)))
             .child(
                 card(t)
                     .flex_row()
@@ -972,7 +973,7 @@ impl FlasherView {
                     icon(if open { "chevron-down" } else { "chevron-right" }, 16., t.dim)
                         .group_hover("details", move |s| s.text_color(text)),
                 )
-                .child("Details"),
+                .child(tr("Details")),
         );
         if open {
             d = d.child(div().pl(px(22.)).child(kv(
@@ -1003,7 +1004,7 @@ impl FlasherView {
                         });
                     }))
                 }))
-                .child(button(t, "flash", format!("Install {ver}"), ButtonKind::Primary, ready, move |_, _, cx| {
+                .child(button(t, "flash", trf("Install {1}", &[&ver]), ButtonKind::Primary, ready, move |_, _, cx| {
                     let _ = me2.update(cx, |v, cx| v.start_flash(cx));
                 })),
         )
@@ -1042,7 +1043,7 @@ impl FlasherView {
                 div()
                     .flex()
                     .justify_between()
-                    .child(div().font_family(FONT_DISPLAY).text_size(px(20.)).child(title))
+                    .child(div().font_family(FONT_DISPLAY).text_size(px(20.)).child(tr(title)))
                     .child(div().font_family(FONT_MONO).child(format!("{:.0}%", self.progress * 100.))),
             )
             .child(bar(t, self.progress, if self.step == Step::Done { t.ok } else { t.accent }))
@@ -1078,7 +1079,7 @@ impl FlasherView {
             .gap(px(12.))
             .pt(px(12.))
             .child(clawd(4.))
-            .child(div().font_family(FONT_DISPLAY).text_size(px(22.)).child("Firmware installed"))
+            .child(div().font_family(FONT_DISPLAY).text_size(px(22.)).child(tr("Firmware installed")))
             .child(div().max_w(px(440.)).text_center().child(para(
                 t,
                 if self.connected {

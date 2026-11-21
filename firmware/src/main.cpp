@@ -13,6 +13,7 @@
 #include "cola.h"
 #include "room.h"
 #include "reminder.h"
+#include "face_mood.h"
 #include "clawd_director.h"
 #include "usage_rate.h"
 #include "signals.h"
@@ -35,6 +36,7 @@
 #include "hal/imu_hal.h"
 #include "hal/sound_hal.h"
 #include "hal/board_info_hal.h"
+#include "hal/sd_hal.h"
 
 static UsageData usage = {};
 
@@ -278,10 +280,13 @@ static void check_serial_cmd() {
                 Serial.printf("{\"room_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 5, ok ? "true" : "false");
             }
             else if (strncmp(cmd_buf, "remind ", 7) == 0) {
-                // QA: `remind water` (that reminder now), `remind stop`, `remind status`. See reminder.h.
+                // QA: `remind water` (that reminder now), `remind on|off`, `remind stop`, `remind status`. See reminder.h.
                 const bool ok = reminder_debug(cmd_buf + 7);
                 Serial.printf("{\"remind_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 7, ok ? "true" : "false");
             }
+            else if (strcmp(cmd_buf, "sd") == 0 || strcmp(cmd_buf, "sd status") == 0) sd_hal_status();
+            else if (strcmp(cmd_buf, "sd ls") == 0) sd_hal_ls();
+            else if (strcmp(cmd_buf, "sd raw") == 0) sd_hal_raw();
             else if (strncmp(cmd_buf, "cola ", 5) == 0) {
                 // QA: `cola <state>` holds a cola layer state, `cola auto` lets go.
                 const bool ok = cola_debug(cmd_buf + 5);
@@ -306,6 +311,11 @@ void setup() {
     // the ipc task, whose stack is 1 KB, and an interrupt landing mid-install
     // can overflow it (a boot panic, #264); this early, that is rare.
     // attachInterrupt() accepts the service already being installed.
+    // The ipc task's stack is that small, and the install is done in a few tens
+    // of microseconds: start it right after a tick, so the next tick (which
+    // would nest on that stack) is a millisecond away. Without this the boot
+    // panicked on some builds, depending on where the tick happened to land.
+    delay(1);
     gpio_install_isr_service(ARDUINO_ISR_FLAG);
 
     Serial.begin(115200);
@@ -322,6 +332,7 @@ void setup() {
     power_hal_init();
     imu_hal_init();
     sound_hal_init();
+    sd_hal_init();      // pins only; the card is first touched by `sd status`
     touch_hal_init();
 
     // ---- LVGL ----
@@ -519,6 +530,7 @@ void loop() {
     cola_tick();
     room_tick();
     reminder_tick();
+    face_mood_tick();
     director_tick();
     if (director_take_dismissed()) ble_send_dismiss();
     // Rotation transition (blank + ramp) would fight the idle fade — skip
@@ -658,6 +670,8 @@ void loop() {
                 sound_hal_chime();
             }
             if (usage.pace_marker >= 0) pace_marker_set(usage.pace_marker != 0);
+            if (usage.face_caption >= 0) face_mood_set_caption_enabled(usage.face_caption != 0);
+            if (usage.remind >= 0)       reminder_set_enabled(usage.remind != 0);
             if (usage.btn_primary >= 0)   button_action_set(BTN_SLOT_PRIMARY, usage.btn_primary);
             if (usage.btn_secondary >= 0) button_action_set(BTN_SLOT_SECONDARY, usage.btn_secondary);
             if (usage.btn_pwr >= 0)       button_action_set(BTN_SLOT_PWR, usage.btn_pwr);
@@ -685,6 +699,7 @@ void loop() {
             cola_on_payload(&usage, &sig);   // after the ding above: it goes first
             room_on_payload(&usage);
             reminder_on_payload(&usage);
+            face_mood_on_payload(&usage, &sig);
             if (g_after != g_before)
                 Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
                     g_before, g_after, usage.session_pct);

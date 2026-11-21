@@ -32,3 +32,8 @@ void ui_set_pair_hint(PairHint hint);
 // Attention message on the status line (scrolls when long); NULL clears it
 // and the whimsical status line resumes.
 void ui_set_alert_text(const char* message);
+
+// The status words of the meters' line (Tinkering, Crunching, Mulling ...);
+// the face's moods use them too (face_mood.cpp).
+unsigned    ui_verb_count(void);
+const char* ui_verb_at(unsigned i);

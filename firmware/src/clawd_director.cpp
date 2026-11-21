@@ -10,6 +10,7 @@
 #include "hal/board_caps.h"
 #include "usage_rate.h"
 #include "reminder.h"
+#include "face_mood.h"
 #include <Arduino.h>
 #include <lvgl.h>
 #include <string.h>
@@ -736,6 +737,8 @@ static void run_peek(uint32_t now) {
 // the screensaver is off or can't run).
 static void run_remind(uint32_t now) {
     if (!remind_on && step <= 2) {               // over before the face came up: back home
+        if (face_moving()) return;                // a face already rising or dropping lands first
+        if (face_visible()) { to_meters(false); return; }   // it was up already (the screensaver): it goes home, no second Clawd
         if (performing && performer_visible()) go(B_RUN_HOME);
         else { performing = false; arrive_meters(); }
         return;
@@ -844,6 +847,7 @@ void director_tick(void) {
 
 // ─── QA ──────────────────────────────────────────────────────────────────────
 bool director_debug(const char* name) {
+    if (strncmp(name, "mood ", 5) == 0) return face_mood_debug(name + 5);   // `clawd mood think|work|...|auto|status`
     if (strncmp(name, "face ", 5) == 0) return face_debug(name + 5);   // `clawd face happy|heart|wink|surprise|sleepy`
     if (strcmp(name, "home") == 0) {
         // "Show me the meters" (a tap anywhere but home, without the peek).

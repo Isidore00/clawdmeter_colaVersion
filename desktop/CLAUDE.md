@@ -73,7 +73,8 @@ is faked behind `FlashHardware`.
   this computer via rodio, ALSA on Linux), `clock`, `liveliness` (1–5,
   default 3: the Device page's Animation silliness slider, sent as `lv`),
   `attention_anim` (`off`/`10s`/`30s`/`2m`, default `2m`, sent as `aa`
-  seconds), `pace_marker` (default off, sent as `pm`), `button_primary`
+  seconds), `pace_marker` (default off, sent as `pm`), `face_caption` and
+  `water_reminder` (default on, sent as `fc` and `rm`; cola builds only), `button_primary`
   (default `space`), `button_secondary` (default `shift-tab`) and
   `button_pwr` (default `brightness`): `none`, `space`, `shift-tab`, `tab`,
   `enter`, `escape`, `brightness`, a media key (`play-pause`,
@@ -105,7 +106,7 @@ is faked behind `FlashHardware`.
   window watches only while the Device page shows; the
   daemon hands changes to `Engine::set_appearance`, which sends them like any
   device setting), `claude_path`,
-  `release_repo`, `update_check`, `onboarding_done`, `alert_on` (alert kinds
+  `release_repo`, `update_check`, `language` (`auto`, `en` or `zh-TW`; see Window and UI), `onboarding_done`, `alert_on` (alert kinds
   the daemon lets through: the hook records `k` from `hook_event_name` /
   `notification_type` and `engine.on_attention` drops the rest; default all
   but `idle`).
@@ -241,6 +242,16 @@ Per account (`probe.rs`, `oauth.rs`):
   reports "server" even with no decoration manager, so
   `decorations::wanted()` probes the Wayland registry itself.
   `CLAWDMETER_DECORATIONS=client|server` overrides.
+- **Interface language** (`i18n.rs`, `i18n/zh_tw.rs`): the English text in the
+  source is the key. `tr()` looks it up in the Traditional Chinese (Taiwan)
+  table (the shared widgets translate their own labels, so most call sites
+  need nothing); `trf("… {1} …", &[..])` fills templates; sentences built
+  elsewhere with `format!` (core's error messages) match table entries that
+  have `{1}` placeholders. `language = auto` follows the OS locale
+  (`platform::system_locale`), tests always get English. Set
+  `CLAWDMETER_I18N_DEBUG=1` to log strings the table lacks. Config keys,
+  protocol keys, CLI flags, logs and test ids stay English. GPUI falls back to
+  a system font for CJK.
 - Board art is bundled by `ui::Assets` and drawn with
   `img(board.illustration())`. Use `img()`, not `svg()`: `svg()` renders a
   monochrome mask, `img()` renders the SVG through resvg in full colour.
