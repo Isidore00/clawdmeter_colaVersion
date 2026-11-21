@@ -49,6 +49,11 @@ Settings are fixed in the firmware for now (`REMINDER_PROGRAMS`,
 - The panel dims and sleeps after **10 minutes** without a touch or a button,
   on USB power as on battery, every day (`idle_cfg.h`). Other boards keep 30
   minutes and stay on while plugged in.
+- **Only you at the board counts**: a touch, a button or an alert. Claude Code
+  working (prompts, tool calls, usage moving, "back after a gap") does not
+  restart the 10 minutes or keep the face away, and doesn't send it down
+  either (`face_without_link` in `clawd_policy.h`, `main.cpp`). An alert still
+  wakes the panel and brings the meters.
 - The face is the resting screen: it comes up after **30 s** of quiet, with
   or without the app connected (`face_without_link`), and a peek stays up
   until you tap it. Not on the room page. With no app it covers the pairing

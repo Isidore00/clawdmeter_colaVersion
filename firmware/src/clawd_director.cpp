@@ -403,9 +403,10 @@ void director_on_payload(const UsageData* d, const SignalsUpdate* sig) {
 
     // The slow clock moving counts as you being around. A change of what the
     // meter measures (session, week, spend) is not a rise.
+    const bool touch_only = clawd_tuning().face_without_link;   // Claude Code working isn't you being here
     if (!sig->replay) {
         if (sig->meter_kind_changed) have_pct = false;
-        if (have_pct && d->session_pct > last_pct + 0.01f) {
+        if (have_pct && d->session_pct > last_pct + 0.01f && !touch_only) {
             engage();
             if (beat == B_SCREENSAVER) to_meters(true);
         }
@@ -426,10 +427,12 @@ void director_on_payload(const UsageData* d, const SignalsUpdate* sig) {
     }
 
     if (sig->event_fired) {
-        engage();
+        if (!touch_only) engage();
         const bool wave = turn_on_event(&turn, sig->event, now_ms(), &clawd_tuning());
         if (minimal) return;
-        if (sig->event == 'p' || sig->event == 'b') {
+        if (touch_only && beat == B_SCREENSAVER) {
+            // The face stays: only a touch, a button or an alert sends it away.
+        } else if (sig->event == 'p' || sig->event == 'b') {
             resume_screensaver = false;       // you're back
             if (beat == B_SCREENSAVER) {
                 to_meters(true);              // he notices, the face drops
@@ -822,7 +825,7 @@ void director_tick(void) {
     const int activity = signals_activity();
     show_gate_update(&show_gate, now, activity, &clawd_tuning());
     // Tool calls flowing (PostToolUse) are hook events too: you're working.
-    if (activity > 0) last_engagement = now;
+    if (activity > 0 && !clawd_tuning().face_without_link) last_engagement = now;
     press_tick(now);
     face_tick();
 

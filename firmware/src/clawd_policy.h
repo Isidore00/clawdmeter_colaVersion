@@ -35,7 +35,9 @@ struct ClawdTuning {
     // clawd_tuning_scaled). Taps and alerts always get their reaction.
     bool     shows;              // earned shows happen
     bool     screensaver;        // the face comes up when you're away
-    bool     face_without_link;  // the face may come up and stay with no live data (no app, stale)
+    bool     face_without_link;  // the cola builds: the face may come up and stay with no live data (no app,
+                                 // stale), and only a touch, a button or an alert counts as you being
+                                 // here; Claude Code's prompts, tool calls and usage moving do not
     bool     idle_acts;          // corner autonomy: idle acts and lurk trips
     bool     reactions;          // noticing a prompt, the long-turn wave, fresh-window joy
     uint8_t  show_min_activity;  // activity level (0-3) whose stretch earns a show
@@ -137,7 +139,8 @@ struct QuietInput {
     bool     meters_live;       // fresh data on the meters (not pairing / stale)
 };
 // With face_without_link (the cola builds) neither the live meters nor the
-// hooks are needed: quiet is only no taps, buttons or app activity.
+// hooks are needed: quiet is only no taps, buttons or alerts. Claude Code
+// working doesn't keep it away (the director stops counting it).
 bool screensaver_ready(const QuietInput* in, const ClawdTuning* t);
 
 // ─── Turn tracker ────────────────────────────────────────────────────────────
