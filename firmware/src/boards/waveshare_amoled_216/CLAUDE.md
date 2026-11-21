@@ -15,7 +15,7 @@ original Waveshare ESP32-S3-Touch-AMOLED-2.16 (CO5300, 480×480 square, CST9220 
 - Touch axes: the CST9220 needs `setSwapXY(true)` + `setMirrorXY(true, false)`, applied in `touch.cpp::touch_hal_init()`.
 - Rotation: the CO5300 can't exchange rows/columns, so `display_hal_draw_bitmap` remaps pixels on the CPU (PARTIAL render mode, 480×40 strips). A rotation change flashes the AMOLED brightness and forces a full redraw, handled in `display_hal_tick`.
 
-## TF (microSD) slot — research only, no driver yet
+## TF (microSD) slot
 
 Checked 2026-11-21 against:
 - Docs pinout: https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-2.16 ("TF | TF card slot | SD SPI | GPIO1/2/3/41").
@@ -34,3 +34,13 @@ HAL refactor). The vendor `pin_config.h` says `#define LCD_RESET 39` and
 `#define TP_RST 40`, and the docs list GPIO39 = LCD_RESET, GPIO40 = TP_RESET,
 GPIO2 = SD SCK. `board.h` now uses 39 and 40. Flash and check that the panel
 lights and touch works before adding any TF code.
+
+**Driver (`sd.cpp`, `hal/sd_hal.h`, not yet tested on hardware):** Arduino `SD`
+over SPI3 (`HSPI`; the display QSPI owns SPI2), 20 MHz, never formats a card.
+Nothing touches the card at boot, so a missing card cannot slow or break
+startup: `sd_hal_init()` only builds the SPI object, and the card is mounted
+on the first `sd status` / `sd ls` / `sd_hal_read()`, retried on every later
+call (a card pushed in later is found). Serial QA: `sd status` (present, type,
+size, used/free MB, then the file list) and `sd ls` (files in `/`). Other
+boards get the weak no-ops in `sd_hal_default.cpp`; `BoardCaps.has_sd` marks a
+board with a slot. No user-facing feature uses the card yet.

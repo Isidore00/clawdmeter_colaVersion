@@ -51,6 +51,12 @@
 #define SND_SAMPLE_RATE      44100
 #define SND_ES8311_ADDR      0x18
 
+// ---- TF (microSD) slot, SPI (see CLAUDE.md) ----
+#define SD_MOSI              1
+#define SD_SCK               2
+#define SD_MISO              3
+#define SD_CS                41
+
 // ---- Capability flags (compile-time; redundant with BoardCaps but lets
 // the linker dead-strip whole functions on boards that don't need them) ----
 #define BOARD_HAS_SECONDARY_BUTTON 1
@@ -59,3 +65,4 @@
 #define BOARD_HAS_BATTERY          1
 #define BOARD_HAS_IO_EXPANDER      0
 #define BOARD_HAS_SOUND            1
+#define BOARD_HAS_SD               1
