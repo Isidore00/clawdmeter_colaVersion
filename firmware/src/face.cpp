@@ -531,7 +531,7 @@ static void mood_enter(FaceMood m, uint32_t now) {
     mood = m;
     mood_t0 = now;
     mood_phase = 0;
-    mood_step_at = 0;
+    mood_step_at = now;
     blink_phase = 0;
     glance_phase = 0;
     lv_anim_delete(&glance_cur, NULL);
@@ -549,7 +549,8 @@ static void mood_enter(FaceMood m, uint32_t now) {
     case MOOD_ASLEEP:   set_glyph(0, GL_CLOSED); set_glyph(1, GL_CLOSED); break;
     default: break;
     }
-    if (m == MOOD_NONE) { eye_scale = 100; glance_to(0); }
+    if (m == MOOD_NONE) eye_scale = 100;
+    glance_to(0);                          // the stopped glance may have left the eyes off to one side
     apply_eyes();
 }
 

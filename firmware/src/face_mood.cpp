@@ -69,6 +69,11 @@ static void set_caption(const char* text) {
 
 void face_mood_tick(void) {
     const uint32_t now = millis();
+    // An expired stamp is moved up to now every tick, so it never looks
+    // like a future time again once millis() is 2^31 ms (24.8 days) past it.
+    if (!face_mood_before(now, reset_until)) reset_until = now;
+    if (!face_mood_before(now, done_until)) done_until = now;
+    if (!face_mood_before(now, prompt_until)) prompt_until = now;
     if (!face_visible() || face_moving() || face_drinking()) { last_caption[0] = '\0'; return; }
 
     const int activity = signals_activity();

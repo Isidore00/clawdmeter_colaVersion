@@ -80,9 +80,22 @@ void reminder_on_payload(const UsageData* d) {
 
 bool reminder_active(void) { return active; }
 
-bool reminder_enabled(void) { return enabled; }
+// The switch is read from NVS the first time anything needs it, so a serial
+// `remind on` in the first loop can't be lost to a later load.
+static void load_enabled(void) {
+    static bool loaded = false;
+    if (loaded) return;
+    loaded = true;
+    Preferences prefs;
+    prefs.begin("clawdmeter", true);
+    enabled = prefs.getBool("remind_on", true);
+    prefs.end();
+}
+
+bool reminder_enabled(void) { load_enabled(); return enabled; }
 
 void reminder_set_enabled(bool on) {
+    load_enabled();
     if (on == enabled) return;
     enabled = on;
     if (!on) end(true);                   // one up now goes away like an answered one
@@ -100,11 +113,8 @@ void reminder_tick(void) {
     if (!inited) {
         inited = true;
         for (auto& c : clocks) reminder_clock_init(&c);
-        Preferences prefs;
-        prefs.begin("clawdmeter", true);
-        enabled = prefs.getBool("remind_on", true);
-        prefs.end();
     }
+    load_enabled();
     const uint32_t now = millis();
     if (active && (uint32_t)(now - started_ms) >= REMIND_SHOW_MS) end(false);
     if (active) {
@@ -134,6 +144,7 @@ bool reminder_debug(const char* what) {
     if (strcmp(what, "on") == 0)  { reminder_set_enabled(true);  return true; }
     if (strcmp(what, "off") == 0) { reminder_set_enabled(false); return true; }
     if (strcmp(what, "status") == 0) {
+        load_enabled();
         const long t = have_clock ? clock_now_s() : 0;
         Serial.printf("{\"remind\":{\"enabled\":%s,\"clock\":%s,\"weekday\":%d,\"minute\":%d,\"active\":%s",
                       enabled ? "true" : "false", have_clock ? "true" : "false", have_clock ? clock_weekday(t) : -1,
