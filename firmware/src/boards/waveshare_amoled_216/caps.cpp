@@ -12,6 +12,7 @@ static const BoardCaps caps = {
     .minimal_ui   = false,   // full animated UI; true for e-ink / slow panels
     .has_pwr_button = true,  // AXP2101 PKEY
     .has_touch = true,
+    .has_sd = true,          // TF slot (sd.cpp)
 };
 
 const BoardCaps& board_caps(void) { return caps; }

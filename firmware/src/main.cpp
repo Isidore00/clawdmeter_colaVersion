@@ -36,6 +36,7 @@
 #include "hal/imu_hal.h"
 #include "hal/sound_hal.h"
 #include "hal/board_info_hal.h"
+#include "hal/sd_hal.h"
 
 static UsageData usage = {};
 
@@ -283,6 +284,8 @@ static void check_serial_cmd() {
                 const bool ok = reminder_debug(cmd_buf + 7);
                 Serial.printf("{\"remind_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 7, ok ? "true" : "false");
             }
+            else if (strcmp(cmd_buf, "sd") == 0 || strcmp(cmd_buf, "sd status") == 0) sd_hal_status();
+            else if (strcmp(cmd_buf, "sd ls") == 0) sd_hal_ls();
             else if (strncmp(cmd_buf, "cola ", 5) == 0) {
                 // QA: `cola <state>` holds a cola layer state, `cola auto` lets go.
                 const bool ok = cola_debug(cmd_buf + 5);
@@ -328,6 +331,7 @@ void setup() {
     power_hal_init();
     imu_hal_init();
     sound_hal_init();
+    sd_hal_init();      // pins only; the card is first touched by `sd status`
     touch_hal_init();
 
     // ---- LVGL ----

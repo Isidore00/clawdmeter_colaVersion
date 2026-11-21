@@ -116,3 +116,11 @@ Clawd's full-size performances use a 60×60-cell coordinate system, with cell si
 Check meters, spend-only accounts, pairing, stale data, attention, the
 face, and minimal display on the new panel. Use `perf` to inspect redraw
 costs and [the simulator guide](../simulator.md) for scripted captures.
+
+## `sd_hal.h`
+
+Optional TF card (`BoardCaps.has_sd`). Implement `sd_hal_init` (bus pins only,
+no card access: a missing card must not delay boot), `sd_hal_present` (mount on
+demand, retry each call), `sd_hal_status`, `sd_hal_ls` (the `sd status` / `sd ls`
+serial commands) and `sd_hal_read` (path, offset, buffer; -1 without a card).
+Boards without a slot use the weak no-ops in `sd_hal_default.cpp`.
