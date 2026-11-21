@@ -453,6 +453,10 @@ pub struct Settings {
     pub attention_anim: AttentionAnim,
     /// Pace marker on the device's usage bars (`pm`, default off).
     pub pace_marker: bool,
+    /// The orange face's small verb caption on cola builds (`face_caption`, `fc`, default on).
+    pub face_caption: bool,
+    /// Reminders (drink water) on cola builds (`water_reminder`, `rm`, default on).
+    pub water_reminder: bool,
     /// What the device's primary, secondary and PWR buttons do, by
     /// [`Button::index`] (`button_primary`, `button_secondary`, `button_pwr`;
     /// sent as `k1`, `k2`, `k3`).
@@ -612,6 +616,8 @@ impl Settings {
             liveliness: cfg.get("liveliness").map(parse_liveliness).unwrap_or(DEFAULT_LIVELINESS),
             attention_anim: cfg.get("attention_anim").map(AttentionAnim::parse).unwrap_or_default(),
             pace_marker: on_off(cfg.get("pace_marker"), false),
+            face_caption: on_off(cfg.get("face_caption"), true),
+            water_reminder: on_off(cfg.get("water_reminder"), true),
             buttons: Button::ALL.map(|b| {
                 cfg.get(b.config_key()).map_or(b.default_action(), |v| ButtonAction::parse(v, b.default_action()))
             }),
@@ -684,6 +690,8 @@ impl Settings {
             ("alert_chime", "beep", self.alert_chime, current.alert_chime),
             ("desktop_chime", "", self.desktop_chime, current.desktop_chime),
             ("pace_marker", "", self.pace_marker, current.pace_marker),
+            ("face_caption", "", self.face_caption, current.face_caption),
+            ("water_reminder", "", self.water_reminder, current.water_reminder),
         ] {
             if now != was {
                 cfg.set(key, oo(now));
@@ -1091,6 +1099,24 @@ mod tests {
         s.theme = DeviceTheme::default();
         s.apply_to(&mut cfg, &paths());
         assert!(cfg.get("theme").is_none());
+    }
+
+    #[test]
+    fn face_caption_and_water_reminder() {
+        let s = settings("");
+        assert!(s.face_caption && s.water_reminder, "both on by default");
+        let s = settings("face_caption = off\nwater_reminder = off\n");
+        assert!(!s.face_caption && !s.water_reminder);
+
+        let mut cfg = ConfigFile::parse("");
+        let mut s = Settings::from_config(&cfg, &paths(), None);
+        s.apply_to(&mut cfg, &paths());
+        assert!(cfg.get("face_caption").is_none() && cfg.get("water_reminder").is_none());
+        s.face_caption = false;
+        s.water_reminder = false;
+        s.apply_to(&mut cfg, &paths());
+        assert_eq!(cfg.get("face_caption"), Some("off"));
+        assert_eq!(cfg.get("water_reminder"), Some("off"));
     }
 
     #[test]

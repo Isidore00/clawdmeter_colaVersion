@@ -99,7 +99,8 @@ The app writes one complete JSON object per write to RX
   primary, secondary and PWR buttons do: presets 0–6, keyboard shortcuts
   and media keys as bit fields, `button_action.h`), `lv` (liveliness 1–5), `aa`
   (attention animation seconds: 120, 30, 10, 0 = off; only his animation,
-  not the alert), `pm` (pace marker on the usage bars, `pace.h`) and `th`
+  not the alert), `pm` (pace marker on the usage bars, `pace.h`), `fc` and `rm` (cola builds: the
+  orange face's caption and the water reminders, 1/0) and `th`
   (the palette, 11 hex colours run together, `theme_palette.h`). The device
   keeps them in NVS (`clawd_prefs.cpp`) so they apply from boot.
 - Device → app: `0x01` on REQ (`…-0004`) when it has no data yet;

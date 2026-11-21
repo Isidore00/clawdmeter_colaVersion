@@ -92,6 +92,10 @@ bool payload_parse(const char* json, UsageData* out, const char** err) {
 
     JsonVariant pm = doc["pm"];
     d.pace_marker = pm.isNull() ? -1 : (int8_t)((pm | 0) ? 1 : 0);
+    JsonVariant fc = doc["fc"];
+    d.face_caption = fc.isNull() ? -1 : (int8_t)((fc | 0) ? 1 : 0);
+    JsonVariant rm = doc["rm"];
+    d.remind = rm.isNull() ? -1 : (int8_t)((rm | 0) ? 1 : 0);
     d.btn_primary   = button_field(doc["k1"]);
     d.btn_secondary = button_field(doc["k2"]);
     d.btn_pwr       = button_field(doc["k3"]);

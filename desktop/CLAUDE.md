@@ -73,7 +73,8 @@ is faked behind `FlashHardware`.
   this computer via rodio, ALSA on Linux), `clock`, `liveliness` (1–5,
   default 3: the Device page's Animation silliness slider, sent as `lv`),
   `attention_anim` (`off`/`10s`/`30s`/`2m`, default `2m`, sent as `aa`
-  seconds), `pace_marker` (default off, sent as `pm`), `button_primary`
+  seconds), `pace_marker` (default off, sent as `pm`), `face_caption` and
+  `water_reminder` (default on, sent as `fc` and `rm`; cola builds only), `button_primary`
   (default `space`), `button_secondary` (default `shift-tab`) and
   `button_pwr` (default `brightness`): `none`, `space`, `shift-tab`, `tab`,
   `enter`, `escape`, `brightness`, a media key (`play-pause`,

@@ -141,6 +141,19 @@ static void test_pace_marker(void) {
     TEST_ASSERT_EQUAL_INT(1, d.pace_marker);
 }
 
+static void test_face_caption_and_reminders(void) {
+    UsageData d;
+    TEST_ASSERT_TRUE(payload_parse("{\"ok\":true}", &d, nullptr));
+    TEST_ASSERT_EQUAL_INT(-1, d.face_caption);     // absent: keep the setting
+    TEST_ASSERT_EQUAL_INT(-1, d.remind);
+    TEST_ASSERT_TRUE(payload_parse("{\"fc\":0,\"rm\":1}", &d, nullptr));
+    TEST_ASSERT_EQUAL_INT(0, d.face_caption);
+    TEST_ASSERT_EQUAL_INT(1, d.remind);
+    TEST_ASSERT_TRUE(payload_parse("{\"fc\":1,\"rm\":0}", &d, nullptr));
+    TEST_ASSERT_EQUAL_INT(1, d.face_caption);
+    TEST_ASSERT_EQUAL_INT(0, d.remind);
+}
+
 static void test_button_actions(void) {
     UsageData d;
     TEST_ASSERT_TRUE(payload_parse("{\"ok\":true}", &d, nullptr));
@@ -214,6 +227,7 @@ int main(void) {
     RUN_TEST(test_liveliness);
     RUN_TEST(test_attention_animation);
     RUN_TEST(test_pace_marker);
+    RUN_TEST(test_face_caption_and_reminders);
     RUN_TEST(test_button_actions);
     RUN_TEST(test_theme);
     RUN_TEST(test_long_strings_truncate);

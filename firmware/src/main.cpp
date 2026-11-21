@@ -665,6 +665,8 @@ void loop() {
                 sound_hal_chime();
             }
             if (usage.pace_marker >= 0) pace_marker_set(usage.pace_marker != 0);
+            if (usage.face_caption >= 0) face_mood_set_caption_enabled(usage.face_caption != 0);
+            if (usage.remind >= 0)       reminder_set_enabled(usage.remind != 0);
             if (usage.btn_primary >= 0)   button_action_set(BTN_SLOT_PRIMARY, usage.btn_primary);
             if (usage.btn_secondary >= 0) button_action_set(BTN_SLOT_SECONDARY, usage.btn_secondary);
             if (usage.btn_pwr >= 0)       button_action_set(BTN_SLOT_PWR, usage.btn_pwr);

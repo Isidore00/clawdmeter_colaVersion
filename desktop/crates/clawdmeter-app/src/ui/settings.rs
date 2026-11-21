@@ -716,6 +716,32 @@ impl SettingsView {
                 });
             }),
         ));
+        let me = cx.entity().downgrade();
+        let caption = self.settings.face_caption;
+        pane = pane.child(field(
+            t,
+            "Orange face caption",
+            "On the cola build, a small faint line under the orange face with what Claude Code is doing.",
+            toggle(t, "face-caption", caption, true, move |_, _, cx| {
+                let _ = me.update(cx, |v, cx| {
+                    v.save(|s, _| s.face_caption = !caption);
+                    cx.notify();
+                });
+            }),
+        ));
+        let me = cx.entity().downgrade();
+        let water = self.settings.water_reminder;
+        pane = pane.child(field(
+            t,
+            "Water reminder",
+            "On the cola build, the orange face reminds you to drink water every 15 minutes on weekdays. Needs the clock setting on.",
+            toggle(t, "water-reminder", water, true, move |_, _, cx| {
+                let _ = me.update(cx, |v, cx| {
+                    v.save(|s, _| s.water_reminder = !water);
+                    cx.notify();
+                });
+            }),
+        ));
         if let Some(buttons) = self.buttons_field(t, board, cx) {
             pane = pane.child(buttons);
         }
@@ -2393,6 +2419,10 @@ mod tests {
         assert!(std::fs::read_to_string(&paths.config_file).unwrap().contains("attention_anim = 30s"));
         click(cx, "pace-marker");
         assert!(std::fs::read_to_string(&paths.config_file).unwrap().contains("pace_marker = on"));
+        click(cx, "face-caption");
+        assert!(std::fs::read_to_string(&paths.config_file).unwrap().contains("face_caption = off"));
+        click(cx, "water-reminder");
+        assert!(std::fs::read_to_string(&paths.config_file).unwrap().contains("water_reminder = off"));
         // A keycap opens its editor; a choice saves and closes it.
         click(cx, "button-primary");
         click(cx, "button-primary-key-3"); // Enter

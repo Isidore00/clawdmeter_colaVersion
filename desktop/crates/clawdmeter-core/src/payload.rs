@@ -94,6 +94,14 @@ pub struct Payload {
     /// value it got.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pm: Option<u8>,
+    /// 1 = the orange face's small verb caption (cola builds; other firmware
+    /// ignores it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fc: Option<u8>,
+    /// 1 = reminders (drink water) may fire (cola builds; other firmware
+    /// ignores it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rm: Option<u8>,
     /// What the primary button does ([`crate::buttons::ButtonAction::code`]).
     /// The device keeps the last value it got.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -114,7 +122,7 @@ pub struct Payload {
 /// Every key [`Payload`] can emit, in serialization order.
 pub const PAYLOAD_KEYS: &[&str] = &[
     "s", "sr", "w", "wr", "st", "acct", "tp", "pd", "rd", "t", "tf", "c", "ok", "b", "m", "x", "a", "e", "es", "n",
-    "rp", "lv", "aa", "pm", "k1", "k2", "k3", "th",
+    "rp", "lv", "aa", "pm", "fc", "rm", "k1", "k2", "k3", "th",
 ];
 /// The fast-clock keys added in v0.4 (old firmware ignores them).
 pub const ADDITIVE_KEYS: &[&str] = &["a", "e", "es", "n", "rp"];
@@ -532,6 +540,8 @@ mod tests {
             lv: Some(5),
             aa: Some(120),
             pm: Some(1),
+            fc: Some(1),
+            rm: Some(1),
             k1: Some(chord),
             k2: Some(chord),
             k3: Some(chord),
@@ -569,6 +579,8 @@ mod tests {
             lv: Some(3),
             aa: Some(120),
             pm: Some(1),
+            fc: Some(1),
+            rm: Some(1),
             k1: Some(1),
             k2: Some(2),
             k3: Some(6),
