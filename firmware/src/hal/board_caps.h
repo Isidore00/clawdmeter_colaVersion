@@ -37,6 +37,7 @@ struct BoardCaps {
                              // (director_button).
     bool    mono_panel;      // a 1-bit panel (e-paper): it keeps the default
                              // palette and ignores `th` (clawd_prefs.cpp).
+    bool    has_sd;          // a TF card slot with a driver (hal/sd_hal.h)
 };
 
 const BoardCaps& board_caps(void);
