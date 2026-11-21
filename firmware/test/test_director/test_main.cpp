@@ -147,6 +147,10 @@ static void fuzz(uint32_t seed, uint32_t total_ms, bool has_big) {
             continue;
         }
         case 14:         director_set_liveliness((int)fz_range(1, 5)); continue;
+        case 15:                                  // a reminder comes up, or is answered
+            if (fz_next() % 2) director_remind(true, 60 * 1000);
+            else               director_remind(false, 0);
+            continue;
         default:         break;                   // a quiet stretch
         }
         d.session_pct = pct;
@@ -156,6 +160,7 @@ static void fuzz(uint32_t seed, uint32_t total_ms, bool has_big) {
     // Left alone afterwards, nothing hangs: whatever was running finishes
     // and he ends up home or in the screensaver.
     director_alert_clear();
+    director_remind(false, 0);
     world.meters_live = true;
     world.activity = 0;
     run_for(3 * 60 * 1000);

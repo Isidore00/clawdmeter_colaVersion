@@ -737,6 +737,8 @@ static void run_peek(uint32_t now) {
 // the screensaver is off or can't run).
 static void run_remind(uint32_t now) {
     if (!remind_on && step <= 2) {               // over before the face came up: back home
+        if (face_moving()) return;                // a face already rising or dropping lands first
+        if (face_visible()) { to_meters(false); return; }   // it was up already (the screensaver): it goes home, no second Clawd
         if (performing && performer_visible()) go(B_RUN_HOME);
         else { performing = false; arrive_meters(); }
         return;

@@ -2,6 +2,7 @@
 //   pio test -d firmware -e native -f test_room_policy
 #include <unity.h>
 #include <initializer_list>
+#include <stdio.h>
 #include <stdlib.h>
 #include "room_policy.h"
 
