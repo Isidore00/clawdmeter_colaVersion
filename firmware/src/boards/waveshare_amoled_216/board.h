@@ -18,7 +18,7 @@
 #define LCD_SDIO1            5
 #define LCD_SDIO2            6
 #define LCD_SDIO3            7
-#define LCD_RESET            2
+#define LCD_RESET            39    // vendor pin_config.h; GPIO2 is the TF card clock
 
 // ---- I2C bus (touch + PMU + IMU) ----
 #define IIC_SDA              15
@@ -26,7 +26,7 @@
 
 // ---- Touch (CST9220 via TouchDrvCST92xx library) ----
 #define TP_INT               11
-#define TP_RST               2     // shared with LCD_RESET
+#define TP_RST               40    // vendor pin_config.h (own pin, not shared)
 #define CST9220_ADDR         0x5A
 
 // ---- PMU ----
