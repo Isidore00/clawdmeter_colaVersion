@@ -16,6 +16,7 @@ pub mod daemon;
 pub mod diff;
 pub mod errors;
 pub mod hooks;
+pub mod i18n;
 pub mod ipc;
 pub mod logger;
 pub mod onboarding;
@@ -134,9 +135,9 @@ pub fn claude_label(claude: &std::path::Path, home: &std::path::Path) -> String 
 /// "12 s ago" / "3 min ago" / "2 h ago".
 pub fn ago(secs: i64) -> String {
     match secs.max(0) {
-        s if s < 60 => format!("{s} s ago"),
-        s if s < 3600 => format!("{} min ago", s / 60),
-        s => format!("{} h ago", s / 3600),
+        s if s < 60 => i18n::trf("{1} s ago", &[&s.to_string()]),
+        s if s < 3600 => i18n::trf("{1} min ago", &[&(s / 60).to_string()]),
+        s => i18n::trf("{1} h ago", &[&(s / 3600).to_string()]),
     }
 }
 

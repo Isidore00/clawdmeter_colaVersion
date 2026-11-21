@@ -182,6 +182,46 @@ impl ClockMode {
     }
 }
 
+/// `language`: the app's interface language (the tray and every window).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Language {
+    /// Follow the operating system (default).
+    #[default]
+    Auto,
+    /// English.
+    En,
+    /// Traditional Chinese (Taiwan).
+    ZhTw,
+}
+
+impl Language {
+    /// Parse a config value; anything unknown is `Auto`.
+    pub fn parse(v: &str) -> Self {
+        match v.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+            "en" | "english" => Language::En,
+            "zh-tw" | "zh-hant" | "zh-hant-tw" | "zh" => Language::ZhTw,
+            _ => Language::Auto,
+        }
+    }
+
+    /// The config-file spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Language::Auto => "auto",
+            Language::En => "en",
+            Language::ZhTw => "zh-TW",
+        }
+    }
+
+    /// Does a locale name such as `zh-TW`, `zh_Hant_HK` or `zh_TW.UTF-8` ask
+    /// for Traditional Chinese?
+    pub fn locale_is_zh_tw(locale: &str) -> bool {
+        let l = locale.trim().to_ascii_lowercase().replace('_', "-");
+        let l = l.split(['.', '@']).next().unwrap_or("");
+        l == "zh-tw" || l == "zh-hk" || l == "zh-mo" || l.starts_with("zh-hant")
+    }
+}
+
 /// `attention_anim`: how long Clawd points and waves on the device when
 /// Claude needs you. Only his animation: the alert itself is unchanged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -447,6 +487,8 @@ pub struct Settings {
     pub update_check: bool,
     /// Which kinds of "Claude needs you" alert reach the device and tray.
     pub alert_on: AlertOn,
+    /// The app's interface language (`language`, default `auto`).
+    pub language: Language,
     /// How lively Clawd is on the device (`lv`, 1-5, default 3).
     pub liveliness: u8,
     /// How long Clawd points and waves for an alert (`aa`, default 2m).
@@ -613,6 +655,7 @@ impl Settings {
             claude_path: cfg.get("claude_path").filter(|s| !s.is_empty()).map(|s| paths.expand_tilde(s)),
             update_check: on_off(cfg.get("update_check"), true),
             alert_on: cfg.get("alert_on").map(AlertOn::parse).unwrap_or_default(),
+            language: cfg.get("language").map(Language::parse).unwrap_or_default(),
             liveliness: cfg.get("liveliness").map(parse_liveliness).unwrap_or(DEFAULT_LIVELINESS),
             attention_anim: cfg.get("attention_anim").map(AttentionAnim::parse).unwrap_or_default(),
             pace_marker: on_off(cfg.get("pace_marker"), false),
@@ -717,6 +760,13 @@ impl Settings {
         }
         if current.alert_on != self.alert_on {
             cfg.set("alert_on", &self.alert_on.as_config());
+        }
+        if current.language != self.language {
+            if self.language == Language::default() {
+                cfg.remove("language");
+            } else {
+                cfg.set("language", self.language.as_str());
+            }
         }
         if current.liveliness != self.liveliness {
             cfg.set("liveliness", &self.liveliness.to_string());
@@ -916,6 +966,63 @@ mod tests {
         assert_eq!(cfg.get("button_secondary"), Some("volume-up"));
         assert_eq!(cfg.get("button_pwr"), Some("ctrl+shift+m hold"));
         assert_eq!(Settings::from_config(&cfg, &paths(), None).buttons, s.buttons);
+    }
+
+    #[test]
+    fn language() {
+        assert_eq!(settings("").language, Language::Auto, "follows the system by default");
+        assert_eq!(
+            settings(
+                "language = zh-TW
+"
+            )
+            .language,
+            Language::ZhTw
+        );
+        assert_eq!(
+            settings(
+                "language = zh_tw
+"
+            )
+            .language,
+            Language::ZhTw
+        );
+        assert_eq!(
+            settings(
+                "language = EN
+"
+            )
+            .language,
+            Language::En
+        );
+        assert_eq!(
+            settings(
+                "language = klingon
+"
+            )
+            .language,
+            Language::Auto
+        );
+        assert!(Language::locale_is_zh_tw("zh-TW") && Language::locale_is_zh_tw("zh_TW.UTF-8"));
+        assert!(Language::locale_is_zh_tw("zh-Hant-HK") && !Language::locale_is_zh_tw("zh-CN"));
+        assert!(!Language::locale_is_zh_tw("en-US"));
+
+        let mut cfg = ConfigFile::parse(
+            "# keep
+",
+        );
+        let mut s = Settings::from_config(&cfg, &paths(), None);
+        s.apply_to(&mut cfg, &paths());
+        assert!(cfg.get("language").is_none(), "the default stays out of the file");
+        s.language = Language::ZhTw;
+        s.apply_to(&mut cfg, &paths());
+        assert_eq!(cfg.get("language"), Some("zh-TW"));
+        s.language = Language::En;
+        s.apply_to(&mut cfg, &paths());
+        assert_eq!(cfg.get("language"), Some("en"));
+        s.language = Language::Auto;
+        s.apply_to(&mut cfg, &paths());
+        assert!(cfg.get("language").is_none());
     }
 
     #[test]

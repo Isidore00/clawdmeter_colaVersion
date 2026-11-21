@@ -14,6 +14,7 @@ use super::setup::{SetupEvent, SetupView};
 use super::theme::{Theme, R_ITEM, R_PILL};
 use super::widgets::icon;
 use super::{chrome, Navigate, REFRESH};
+use crate::i18n::{tr, trf};
 use crate::{ipc, Page};
 
 /// The app window.
@@ -176,7 +177,7 @@ impl AppView {
                 )
                 .group_hover(page.as_str(), move |s| s.text_color(text)),
             )
-            .child(div().flex_1().child(page.label()))
+            .child(div().flex_1().child(tr(page.label())))
             .when_some(badge, |d, b| {
                 d.child(
                     div()
@@ -224,7 +225,7 @@ impl AppView {
             .text_size(px(12.))
             .text_color(t.mute)
             .child(
-                div().flex().gap(px(4.)).whitespace_nowrap().child("Created by").child(
+                div().flex().gap(px(4.)).whitespace_nowrap().child(tr("Created by")).child(
                     div()
                         .id("credit")
                         .debug_selector(|| "credit".into())
@@ -235,7 +236,7 @@ impl AppView {
                         .child("@HermannBjorgvin"),
                 ),
             )
-            .child(format!("Version {}", crate::version()));
+            .child(trf("Version {1}", &[crate::version()]));
         div()
             .flex()
             .flex_col()

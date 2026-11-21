@@ -24,6 +24,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 use crate::art::{tray_icon_rgba, TrayState};
 use crate::daemon::{self, Command, DaemonHandle};
+use crate::i18n::{tr, trf};
 use crate::ipc::{self, AppCommand, StatusSnapshot};
 use crate::{ago, tilde, Page};
 
@@ -114,17 +115,23 @@ impl Items {
 
     fn update(&self, snap: &StatusSnapshot, paths: &Paths, chimes_on: bool, now: i64) {
         let state = snap.tray_state();
-        let mut label = state.label().to_owned();
+        let mut label = state.label();
         if snap.link == "no_adapter" {
-            label = "Bluetooth unavailable".into();
+            label = "Bluetooth unavailable";
         }
-        self.status.set_text(format!("Clawdmeter · {label}"));
+        self.status.set_text(format!("Clawdmeter · {}", tr(label)));
+        // Fixed items follow the language too (the window can change it).
+        self.refresh.set_text(tr("Refresh usage"));
+        self.mute.set_text(tr("Mute chimes"));
+        self.open.set_text(tr("Open Clawdmeter"));
+        self.settings.set_text(tr("Settings…"));
+        self.quit.set_text(tr("Quit Clawdmeter"));
         let account = snap.account.as_deref().map(|a| tilde(a, &paths.home));
         self.account.set_text(match (account, snap.age(now)) {
-            (Some(a), Some(age)) => format!("{a} · updated {}", ago(age)),
+            (Some(a), Some(age)) => trf("{1} · updated {2}", &[&a, &ago(age)]),
             (Some(a), None) => a,
-            (None, _) if snap.logged_out => "Open Claude Code to sign in".into(),
-            (None, _) => "No usage data yet".into(),
+            (None, _) if snap.logged_out => tr("Open Claude Code to sign in").to_string(),
+            (None, _) => tr("No usage data yet").to_string(),
         });
         // No 5-hour limit (verified Ultra): no Session line at all. It goes
         // back above Weekly, after the status, account and separator.
@@ -137,19 +144,19 @@ impl Items {
             }
         }
         self.session.set_text(match snap.session_pct {
-            Some(p) if snap.window_started => format!("Session  {p}%"),
-            Some(_) => "Session  not started".into(),
-            None => "Session  –".into(),
+            Some(p) if snap.window_started => trf("Session  {1}%", &[&p.to_string()]),
+            Some(_) => tr("Session  not started").to_string(),
+            None => tr("Session  –").to_string(),
         });
         self.weekly.set_text(match snap.week_pct {
-            Some(p) => format!("Weekly  {p}%"),
-            None => "Weekly  –".into(),
+            Some(p) => trf("Weekly  {1}%", &[&p.to_string()]),
+            None => tr("Weekly  –").to_string(),
         });
         self.mute.set_checked(snap.chimes_muted);
         self.mute.set_enabled(chimes_on);
         self.update.set_text(match snap.update_available() {
-            Some(v) => format!("Update firmware to {}…", display_version(v)),
-            None => "Flash firmware…".into(),
+            Some(v) => trf("Update firmware to {1}…", &[&display_version(v)]),
+            None => tr("Flash firmware…").to_string(),
         });
     }
 }
@@ -167,10 +174,10 @@ fn icon_for(state: TrayState) -> Option<Icon> {
 }
 
 fn tooltip(snap: &StatusSnapshot) -> String {
-    let mut t = format!("Clawdmeter · {}", snap.tray_state().label());
+    let mut t = format!("Clawdmeter · {}", tr(snap.tray_state().label()));
     match (snap.session_pct, snap.week_pct) {
-        (Some(s), Some(w)) => t.push_str(&format!(" · Session {s}% · Weekly {w}%")),
-        (None, Some(w)) if snap.no_session_limit => t.push_str(&format!(" · Weekly {w}%")),
+        (Some(s), Some(w)) => t.push_str(&trf(" · Session {1}% · Weekly {2}%", &[&s.to_string(), &w.to_string()])),
+        (None, Some(w)) if snap.no_session_limit => t.push_str(&trf(" · Weekly {1}%", &[&w.to_string()])),
         _ => {}
     }
     t
@@ -297,6 +304,7 @@ impl TrayApp {
         if now - self.settings_at >= 5 {
             self.settings_at = now;
             if let Ok(s) = Settings::load(&self.paths) {
+                crate::i18n::apply(s.language);
                 self.settings = s;
             }
         }

@@ -46,6 +46,23 @@ pub fn utc_offset_secs() -> i64 {
     i64::from(chrono::Local::now().offset().local_minus_utc())
 }
 
+/// The OS's locale name (`zh-TW`, `en_US.UTF-8`), best effort: Windows reads
+/// the user's regional format from the registry, everything else the usual
+/// `LC_ALL` / `LC_MESSAGES` / `LANG` variables (macOS: the first
+/// `AppleLanguages` entry).
+pub fn system_locale() -> Option<String> {
+    if cfg!(windows) {
+        return run("reg", &["query", r"HKCU\Control Panel\International", "/v", "LocaleName"]).and_then(|s| {
+            s.lines().find(|l| l.contains("LocaleName")).and_then(|l| l.split_whitespace().last().map(str::to_owned))
+        });
+    }
+    if cfg!(target_os = "macos") {
+        let langs = run("defaults", &["read", "-g", "AppleLanguages"])?;
+        return langs.split('"').nth(1).map(str::to_owned);
+    }
+    ["LC_ALL", "LC_MESSAGES", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
+}
+
 /// The OS's light or dark mode. Unknown counts as dark.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Appearance {
