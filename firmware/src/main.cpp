@@ -13,6 +13,7 @@
 #include "cola.h"
 #include "room.h"
 #include "reminder.h"
+#include "face_mood.h"
 #include "clawd_director.h"
 #include "usage_rate.h"
 #include "signals.h"
@@ -278,7 +279,7 @@ static void check_serial_cmd() {
                 Serial.printf("{\"room_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 5, ok ? "true" : "false");
             }
             else if (strncmp(cmd_buf, "remind ", 7) == 0) {
-                // QA: `remind water` (that reminder now), `remind stop`, `remind status`. See reminder.h.
+                // QA: `remind water` (that reminder now), `remind on|off`, `remind stop`, `remind status`. See reminder.h.
                 const bool ok = reminder_debug(cmd_buf + 7);
                 Serial.printf("{\"remind_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 7, ok ? "true" : "false");
             }
@@ -306,6 +307,11 @@ void setup() {
     // the ipc task, whose stack is 1 KB, and an interrupt landing mid-install
     // can overflow it (a boot panic, #264); this early, that is rare.
     // attachInterrupt() accepts the service already being installed.
+    // The ipc task's stack is that small, and the install is done in a few tens
+    // of microseconds: start it right after a tick, so the next tick (which
+    // would nest on that stack) is a millisecond away. Without this the boot
+    // panicked on some builds, depending on where the tick happened to land.
+    delay(1);
     gpio_install_isr_service(ARDUINO_ISR_FLAG);
 
     Serial.begin(115200);
@@ -519,6 +525,7 @@ void loop() {
     cola_tick();
     room_tick();
     reminder_tick();
+    face_mood_tick();
     director_tick();
     if (director_take_dismissed()) ble_send_dismiss();
     // Rotation transition (blank + ramp) would fight the idle fade — skip
@@ -685,6 +692,7 @@ void loop() {
             cola_on_payload(&usage, &sig);   // after the ding above: it goes first
             room_on_payload(&usage);
             reminder_on_payload(&usage);
+            face_mood_on_payload(&usage, &sig);
             if (g_after != g_before)
                 Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
                     g_before, g_after, usage.session_pct);

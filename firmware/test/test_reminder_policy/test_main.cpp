@@ -13,7 +13,6 @@ static const long MON_0800 = 1795420800L;
 static const long MON_1945 = 1795463100L;
 static const long MON_2000 = 1795464000L;
 static const long FRI_1945 = 1795808700L;
-static const long MON2_0800 = 1796025600L;  // the next Monday
 
 static const ReminderProgram* water(void) { return &REMINDER_PROGRAMS[0]; }
 
@@ -31,7 +30,8 @@ static void test_window(void) {
     TEST_ASSERT_TRUE(reminder_slot_in_window(p, reminder_slot(p, MON_1945)));
     TEST_ASSERT_FALSE(reminder_slot_in_window(p, reminder_slot(p, MON_0759)));   // 07:45 slot
     TEST_ASSERT_FALSE(reminder_slot_in_window(p, reminder_slot(p, MON_2000)));   // 20:00 is out
-    TEST_ASSERT_FALSE(reminder_slot_in_window(p, reminder_slot(p, SAT_1007)));   // weekend
+    TEST_ASSERT_TRUE(reminder_slot_in_window(p, reminder_slot(p, SAT_1007)));    // weekends count too
+    TEST_ASSERT_FALSE(reminder_slot_in_window(p, reminder_slot(p, SAT_1007 - 3 * 3600)));   // Saturday 07:07 is before 08:00
 }
 
 static void test_tracker(void) {
@@ -60,8 +60,8 @@ static void test_next(void) {
     TEST_ASSERT_EQUAL(MON_0800, reminder_next_epoch(p, MON_0800));
     TEST_ASSERT_EQUAL(MON_0800 + 15 * 60, reminder_next_epoch(p, MON_0800 + 1));
     TEST_ASSERT_EQUAL(MON_0800 + 24L * 3600, reminder_next_epoch(p, MON_2000));   // Tuesday 08:00
-    TEST_ASSERT_EQUAL(MON2_0800, reminder_next_epoch(p, FRI_1945 + 1));           // over the weekend
-    TEST_ASSERT_EQUAL(MON_0800, reminder_next_epoch(p, SAT_1007));                // Saturday: Monday 08:00
+    TEST_ASSERT_EQUAL(FRI_1945 + 12 * 3600 + 15 * 60, reminder_next_epoch(p, FRI_1945 + 1));   // Saturday 08:00, no weekend gap
+    TEST_ASSERT_EQUAL(SAT_1007 + 8 * 60, reminder_next_epoch(p, SAT_1007));                    // Saturday 10:15
 }
 
 static void test_water(void) {

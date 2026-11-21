@@ -175,6 +175,9 @@ static const char* const anim_messages[] = {
 };
 #define ANIM_MSG_COUNT (sizeof(anim_messages) / sizeof(anim_messages[0]))
 
+unsigned    ui_verb_count(void) { return (unsigned)ANIM_MSG_COUNT; }
+const char* ui_verb_at(unsigned i) { return i < ANIM_MSG_COUNT ? anim_messages[i] : NULL; }
+
 // The first verb from `i` on that fits the status line as "<glyph> <verb>…";
 // a narrow panel skips the long ones rather than clipping them.
 static uint8_t fitting_verb(uint8_t i) {
