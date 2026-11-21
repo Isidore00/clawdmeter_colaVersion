@@ -9,6 +9,7 @@
 #include <lvgl.h>
 #include <Arduino.h>
 #include <string.h>
+#include <math.h>
 
 // Geometry is authored on a 480 px square (design system storyboards) and
 // scaled by the panel's shorter side; the eye block is centred vertically.
@@ -109,15 +110,17 @@ static int      water_shown = -1;
 // in from the side with a speaker on it (a slash when muted, waves when on),
 // held up in front of his face, then carried back out the same way.
 // 0 none, 1 waiting for the face to be up and still, 2 up, 3 held, 4 down.
-#define SIGN_UP_MS    420
+#define SIGN_UP_MS    760
 #define SIGN_HOLD_MS  1600
-#define SIGN_DOWN_MS  300
+#define SIGN_DOWN_MS  420
 #define SIGN_WAIT_MS  4000
 static lv_obj_t* sign = NULL;
 static lv_obj_t* sign_slash = NULL;
 static lv_obj_t* sign_wave[2] = { NULL, NULL };
 static lv_obj_t* sign_box = NULL;
 static lv_obj_t* sign_cone = NULL;
+static lv_obj_t* sign_stick = NULL;                  // the stick: a line from the hand to the board
+static lv_point_precise_t sign_stick_pts[2];
 static lv_point_precise_t sign_cone_pts[5], sign_slash_pts[2], sign_wave_pts[2][3];
 static uint8_t  sign_phase = 0;
 static uint32_t sign_t0 = 0;
@@ -384,14 +387,17 @@ static void set_pt(lv_point_precise_t* p, int x, int y) { p->x = x; p->y = y; }
 
 static void make_sign(void) {
     sign_w = S(120); sign_h = S(92);
-    const int stick_w = S(14), stick_h = S(170);
+    const int stick_w = S(14);
     sign_rest_y = eye_top + eye_h0 + S(40);
+    // The stick is a line from the hand (off the bottom, to the right) to the
+    // board's bottom middle, drawn first so the board covers its end.
+    sign_stick = line(root, sign_stick_pts, 2, stick_w, lv_color_make(0x8A, 0x5A, 0x3C));
+    lv_obj_add_flag(sign_stick, LV_OBJ_FLAG_HIDDEN);
     sign = lv_obj_create(root);
     lv_obj_remove_style_all(sign);
-    lv_obj_set_size(sign, sign_w, sign_h + stick_h);
+    lv_obj_set_size(sign, sign_w, sign_h);
     lv_obj_clear_flag(sign, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(sign, LV_OBJ_FLAG_SCROLLABLE);
-    rect(sign, (sign_w - stick_w) / 2, sign_h - S(6), stick_w, stick_h, lv_color_make(0x8A, 0x5A, 0x3C));
     lv_obj_t* board = rect(sign, 0, 0, sign_w, sign_h, lv_color_white());
     lv_obj_set_style_radius(board, S(14), 0);
     // A speaker in the eye colour, centred on the board (authored on 120 x 92).
@@ -410,32 +416,57 @@ static void make_sign(void) {
     lv_obj_add_flag(sign, LV_OBJ_FLAG_HIDDEN);
 }
 
-// Where the sign stands: under his face, or beside the glass while he drinks.
-static int sign_x(void) {
-    const int cx = drinking ? W / 2 + S(118) : W / 2;
-    return cx - sign_w / 2 + drift_x;
+// The sign is carried in by a hand off the bottom right: the stick pivots on
+// the hand (it moves little), the board swings on the stick's end like a
+// pendulum, "/" as it arrives, over to "\" and back, and rests held in front of
+// him, the stick leaning back toward where it came from.
+#define SIGN_LEAN_REST  (-0.35f)    // rad: "\" at rest (the board left of the hand)
+#define SIGN_LEAN_AWAY  ( 0.60f)    // rad: "/" at the start and the end
+static float sign_stick_len(void) { return (float)S(190); }
+
+// Where the board rests: under his face, or beside the glass while he drinks.
+static int sign_cx(void) { return (drinking ? W / 2 + S(118) : W / 2) + drift_x; }
+
+// The hand when the sign is at rest, and how far right it starts and ends.
+static float sign_hand_rest_x(void) { return sign_cx() - sign_stick_len() * sinf(SIGN_LEAN_REST); }
+static float sign_hand_y(void) {
+    return (float)(sign_rest_y + sign_h + drift_y) + sign_stick_len() * cosf(SIGN_LEAN_REST);
+}
+static float sign_hand_off_x(void) { return (float)W + S(30); }
+
+// Draws the sign for a hand position and a lean (rad, + is "/").
+static void sign_pose(float hand_x, float phi) {
+    const float len = sign_stick_len();
+    const float hy = sign_hand_y();
+    const float bx = hand_x + len * sinf(phi);          // the board's bottom middle
+    const float by = hy - len * cosf(phi);
+    lv_obj_set_pos(sign, (int)bx - sign_w / 2, (int)by - sign_h);
+    sign_stick_pts[0].x = bx;      sign_stick_pts[0].y = by - S(6);
+    sign_stick_pts[1].x = hand_x;  sign_stick_pts[1].y = hy;
+    lv_line_set_points(sign_stick, sign_stick_pts, 2);
 }
 
-// dx: how far right of its resting place (0 = held up in front of him).
-static void sign_place(int dx) { lv_obj_set_pos(sign, sign_x() + dx, sign_rest_y + drift_y); }
-
-// Far enough right that none of it shows.
-static int sign_off_dx(void) { return W - sign_x() + S(10); }
+static void sign_place_rest(void) { sign_pose(sign_hand_rest_x(), SIGN_LEAN_REST); }
 
 static void sign_hide(void) {
     sign_phase = 0;
     if (sign) lv_obj_add_flag(sign, LV_OBJ_FLAG_HIDDEN);
+    if (sign_stick) lv_obj_add_flag(sign_stick, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void sign_start(uint32_t now) {
     sign_phase = 2;
     sign_t0 = now;
-    sign_place(sign_off_dx());
+    sign_pose(sign_hand_off_x(), SIGN_LEAN_AWAY);
+    lv_obj_move_foreground(sign_stick);
     lv_obj_move_foreground(sign);
+    lv_obj_clear_flag(sign_stick, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(sign, LV_OBJ_FLAG_HIDDEN);
 }
 
-// In from the side, held, back out, by the clock.
+// In: the hand eases in from the right while the board swings "/" -> "\" and
+// back, settling at "\". Held. Out: the hand pulls away, speeding up, the
+// board swinging back to "/".
 static void sign_tick(uint32_t now) {
     if (!sign || sign_phase == 0) return;
     const uint32_t ms = now - sign_t0;
@@ -444,19 +475,19 @@ static void sign_tick(uint32_t now) {
         else if (ms >= SIGN_WAIT_MS) sign_phase = 0;   // the face never came up
         return;
     }
-    const int span = sign_off_dx();
-    if (sign_phase == 2) {           // in from the right, a little past the middle, and back (ease-out-back)
-        if (ms >= SIGN_UP_MS) { sign_phase = 3; sign_t0 = now; sign_place(0); return; }
-        const float t = (float)ms / SIGN_UP_MS - 1.0f;           // -1 -> 0
-        const float c1 = 1.70158f, c3 = c1 + 1.0f;
-        const float e = 1.0f + c3 * t * t * t + c1 * t * t;      // 0 -> 1, overshooting
-        sign_place((int)(span * (1.0f - e)));
+    const float hx0 = sign_hand_off_x(), hx1 = sign_hand_rest_x();
+    if (sign_phase == 2) {
+        if (ms >= SIGN_UP_MS) { sign_phase = 3; sign_t0 = now; sign_place_rest(); return; }
+        const float u = (float)ms / SIGN_UP_MS;
+        const float ease = 1.0f - (1.0f - u) * (1.0f - u);                   // the hand: ease-out
+        const float swing = (SIGN_LEAN_AWAY - SIGN_LEAN_REST) * (1.0f - u) * cosf(6.2832f * 1.25f * u);
+        sign_pose(hx0 + (hx1 - hx0) * ease, SIGN_LEAN_REST + swing);
     } else if (sign_phase == 3) {
         if (ms >= SIGN_HOLD_MS) { sign_phase = 4; sign_t0 = now; }
-    } else if (sign_phase == 4) {    // back out to the right, picking up speed
+    } else if (sign_phase == 4) {
         if (ms >= SIGN_DOWN_MS) { sign_hide(); return; }
-        const int f = (int)(ms * 1000 / SIGN_DOWN_MS);           // 0 -> 1000
-        sign_place(span * f / 1000 * f / 1000);
+        const float u = (float)ms / SIGN_DOWN_MS;
+        sign_pose(hx1 + (hx0 - hx1) * u * u, SIGN_LEAN_REST + (SIGN_LEAN_AWAY - SIGN_LEAN_REST) * u);
     }
 }
 
@@ -468,7 +499,7 @@ static void drink_off(void) {
     water_shown = -1;
     set_glyph(0, GL_OPEN);
     set_glyph(1, GL_OPEN);
-    if (sign_phase == 3) sign_place(0);    // the sign moves back to the middle
+    if (sign_phase == 3) sign_place_rest();    // the sign moves back to the middle
 }
 
 void face_init(void) {
@@ -745,7 +776,7 @@ void face_tick(void) {
         face_drift_for_step(drift_step, unit, &drift_x, &drift_y);
         apply_eyes();
         place_cup();
-        if (sign_phase == 3) sign_place(0);
+        if (sign_phase == 3) sign_place_rest();
     }
     if (drinking) {
         const int pct = reminder_water_pct(now - drink_start, drink_ms);
@@ -821,7 +852,7 @@ void face_drink(bool on, uint32_t ms) {
     place_cup();
     place_water(100);
     show_cup(true);
-    if (sign_phase == 3) sign_place(0);    // a sign already up steps aside
+    if (sign_phase == 3) sign_place_rest();    // a sign already up steps aside
 }
 
 bool face_drinking(void) { return drinking; }
