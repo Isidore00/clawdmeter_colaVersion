@@ -60,11 +60,9 @@ Settings are fixed in the firmware for now (`REMINDER_PROGRAMS`,
 
 A press held about a second without moving, on the meters or the face, turns
 her lines on or off (the room page has its own hold, anywhere but on her).
-The face answers with a sign: a little white board on a stick slides in from
-the right and stops, with a small overshoot, held up in front of him under his
-eyes. It has a speaker on it, waves for sound on or a red slash for muted, and
-is carried back out to the right after a moment (`clawd face sign on|off` for
-QA). On the meters he comes up first, as for a
+The face answers with a sign: a little white board on a stick comes up from
+the bottom with a speaker on it, waves for sound on or a red slash for muted,
+and goes back down after a moment. On the meters he comes up first, as for a
 tap. A hold is never a tap: touch on the director becomes a tap when the
 finger lifts, if it stayed within 24 px.
 

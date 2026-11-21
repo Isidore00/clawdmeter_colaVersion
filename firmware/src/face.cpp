@@ -106,12 +106,11 @@ static uint32_t drink_start = 0, drink_ms = 0;
 static int      water_shown = -1;
 
 // The sign (the voice switch): a little white board on a stick, held up from
-// in from the side with a speaker on it (a slash when muted, waves when on),
-// held up in front of his face, then carried back out the same way.
+// below with a speaker on it (a slash when muted, waves when on), then down.
 // 0 none, 1 waiting for the face to be up and still, 2 up, 3 held, 4 down.
-#define SIGN_UP_MS    420
+#define SIGN_UP_MS    280
 #define SIGN_HOLD_MS  1600
-#define SIGN_DOWN_MS  300
+#define SIGN_DOWN_MS  240
 #define SIGN_WAIT_MS  4000
 static lv_obj_t* sign = NULL;
 static lv_obj_t* sign_slash = NULL;
@@ -416,11 +415,7 @@ static int sign_x(void) {
     return cx - sign_w / 2 + drift_x;
 }
 
-// dx: how far right of its resting place (0 = held up in front of him).
-static void sign_place(int dx) { lv_obj_set_pos(sign, sign_x() + dx, sign_rest_y + drift_y); }
-
-// Far enough right that none of it shows.
-static int sign_off_dx(void) { return W - sign_x() + S(10); }
+static void sign_place(int y) { lv_obj_set_pos(sign, sign_x(), y + drift_y); }
 
 static void sign_hide(void) {
     sign_phase = 0;
@@ -430,12 +425,12 @@ static void sign_hide(void) {
 static void sign_start(uint32_t now) {
     sign_phase = 2;
     sign_t0 = now;
-    sign_place(sign_off_dx());
+    sign_place(H + S(10));
     lv_obj_move_foreground(sign);
     lv_obj_clear_flag(sign, LV_OBJ_FLAG_HIDDEN);
 }
 
-// In from the side, held, back out, by the clock.
+// Up with an ease-out, held, down with an ease-in, by the clock.
 static void sign_tick(uint32_t now) {
     if (!sign || sign_phase == 0) return;
     const uint32_t ms = now - sign_t0;
@@ -444,19 +439,17 @@ static void sign_tick(uint32_t now) {
         else if (ms >= SIGN_WAIT_MS) sign_phase = 0;   // the face never came up
         return;
     }
-    const int span = sign_off_dx();
-    if (sign_phase == 2) {           // in from the right, a little past the middle, and back (ease-out-back)
-        if (ms >= SIGN_UP_MS) { sign_phase = 3; sign_t0 = now; sign_place(0); return; }
-        const float t = (float)ms / SIGN_UP_MS - 1.0f;           // -1 -> 0
-        const float c1 = 1.70158f, c3 = c1 + 1.0f;
-        const float e = 1.0f + c3 * t * t * t + c1 * t * t;      // 0 -> 1, overshooting
-        sign_place((int)(span * (1.0f - e)));
+    const int below = H + S(10), span = below - sign_rest_y;
+    if (sign_phase == 2) {
+        if (ms >= SIGN_UP_MS) { sign_phase = 3; sign_t0 = now; sign_place(sign_rest_y); return; }
+        const int f = 1000 - (int)(ms * 1000 / SIGN_UP_MS);       // 1000 -> 0
+        sign_place(sign_rest_y + span * f / 1000 * f / 1000);
     } else if (sign_phase == 3) {
         if (ms >= SIGN_HOLD_MS) { sign_phase = 4; sign_t0 = now; }
-    } else if (sign_phase == 4) {    // back out to the right, picking up speed
+    } else if (sign_phase == 4) {
         if (ms >= SIGN_DOWN_MS) { sign_hide(); return; }
-        const int f = (int)(ms * 1000 / SIGN_DOWN_MS);           // 0 -> 1000
-        sign_place(span * f / 1000 * f / 1000);
+        const int f = (int)(ms * 1000 / SIGN_DOWN_MS);              // 0 -> 1000
+        sign_place(sign_rest_y + span * f / 1000 * f / 1000);
     }
 }
 
@@ -468,7 +461,7 @@ static void drink_off(void) {
     water_shown = -1;
     set_glyph(0, GL_OPEN);
     set_glyph(1, GL_OPEN);
-    if (sign_phase == 3) sign_place(0);    // the sign moves back to the middle
+    if (sign_phase == 3) sign_place(sign_rest_y);    // the sign moves back to the middle
 }
 
 void face_init(void) {
@@ -745,7 +738,7 @@ void face_tick(void) {
         face_drift_for_step(drift_step, unit, &drift_x, &drift_y);
         apply_eyes();
         place_cup();
-        if (sign_phase == 3) sign_place(0);
+        if (sign_phase == 3) sign_place(sign_rest_y);
     }
     if (drinking) {
         const int pct = reminder_water_pct(now - drink_start, drink_ms);
@@ -787,11 +780,6 @@ void face_tick(void) {
 
 bool face_debug(const char* what) {
     if (!root) return false;
-    if (strcmp(what, "sign on") == 0 || strcmp(what, "sign off") == 0) {   // QA: the voice sign
-        if (!sign || !visible) return false;
-        face_show_sign(what[6] == 'n');
-        return true;
-    }
     FaceAct a;
     if      (strcmp(what, "happy") == 0)    a = FACE_HAPPY;
     else if (strcmp(what, "heart") == 0)    a = FACE_HEART;
@@ -821,7 +809,7 @@ void face_drink(bool on, uint32_t ms) {
     place_cup();
     place_water(100);
     show_cup(true);
-    if (sign_phase == 3) sign_place(0);    // a sign already up steps aside
+    if (sign_phase == 3) sign_place(sign_rest_y);    // a sign already up steps aside
 }
 
 bool face_drinking(void) { return drinking; }

@@ -40,11 +40,10 @@ void face_look_at_x(int x, uint32_t hold_ms);
 // A blink is skipped while he drinks.
 void face_drink(bool on, uint32_t ms);
 bool face_drinking(void);
-// The voice switch, answered with a sign: a little board on a stick slides in
-// from the side and he holds it up in front of him, a speaker on it (waves:
-// sound on; a red slash: muted), then carries it back out. If the face isn't up and still, the sign waits a few seconds for it.
+// The voice switch, answered with a sign: he holds up a little board with a
+// speaker on it (waves: sound on; a red slash: muted) for a moment and puts it
+// down. If the face isn't up and still, the sign waits a few seconds for it.
 void face_show_sign(bool sound_on);
-// QA, `clawd face sign on|off` holds up the voice sign (face up, cola builds).
 // QA, `clawd face <happy|heart|wink|surprise|sleepy>`: one of the rarer
 // expressions now. False if the face isn't up and still, or the word is unknown.
 bool face_debug(const char* what);
