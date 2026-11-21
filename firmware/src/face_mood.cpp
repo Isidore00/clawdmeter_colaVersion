@@ -87,7 +87,7 @@ void face_mood_tick(void) {
     in.near_limit = near_limit;
     FaceMoodPick p = face_mood_pick(&in);
     const char* word = verb;
-    if (forced != MOOD_COUNT) { p.mood = forced; p.sweat = false; word = forced_verb; }
+    if (forced != MOOD_COUNT) { p.mood = forced; p.sweat = forced == MOOD_NERVOUS; word = forced_verb; }
 
     face_set_mood(p.mood, p.sweat);
 
