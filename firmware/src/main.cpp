@@ -286,6 +286,7 @@ static void check_serial_cmd() {
             }
             else if (strcmp(cmd_buf, "sd") == 0 || strcmp(cmd_buf, "sd status") == 0) sd_hal_status();
             else if (strcmp(cmd_buf, "sd ls") == 0) sd_hal_ls();
+            else if (strcmp(cmd_buf, "sd raw") == 0) sd_hal_raw();
             else if (strncmp(cmd_buf, "cola ", 5) == 0) {
                 // QA: `cola <state>` holds a cola layer state, `cola auto` lets go.
                 const bool ok = cola_debug(cmd_buf + 5);
