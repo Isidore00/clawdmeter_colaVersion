@@ -4,6 +4,8 @@
 void idle_init(void);
 void idle_tick(void);
 void idle_note_activity(void);
+// How long since the last touch, button or other activity, ms.
+uint32_t idle_quiet_ms(void);
 
 // Set the "awake" brightness target (0..255). idle owns display brightness
 // (it fades between this and 0), so user brightness control routes through

@@ -93,6 +93,8 @@ void idle_remind_end(bool acked) {
         last_activity_ms = now - IDLE_TIMEOUT_MS;
 }
 
+uint32_t idle_quiet_ms(void) { return millis() - last_activity_ms; }
+
 void idle_note_activity(void) {
     if (remind_hold) remind_woke = false;   // you're here: the usual timeout from now
     last_activity_ms = millis();

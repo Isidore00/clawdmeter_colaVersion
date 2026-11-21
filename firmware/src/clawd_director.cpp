@@ -10,6 +10,7 @@
 #include "hal/board_caps.h"
 #include "usage_rate.h"
 #include "reminder.h"
+#include "face_mood.h"
 #include <Arduino.h>
 #include <lvgl.h>
 #include <string.h>
@@ -844,6 +845,7 @@ void director_tick(void) {
 
 // ─── QA ──────────────────────────────────────────────────────────────────────
 bool director_debug(const char* name) {
+    if (strncmp(name, "mood ", 5) == 0) return face_mood_debug(name + 5);   // `clawd mood think|work|...|auto|status`
     if (strncmp(name, "face ", 5) == 0) return face_debug(name + 5);   // `clawd face happy|heart|wink|surprise|sleepy`
     if (strcmp(name, "home") == 0) {
         // "Show me the meters" (a tap anywhere but home, without the peek).

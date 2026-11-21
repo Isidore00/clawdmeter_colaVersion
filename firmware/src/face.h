@@ -1,6 +1,7 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#include "face_mood_policy.h"
 
 // The #198 face: Clawd up close, resting on the glass. Clawd-orange full
 // field, two tall dark eyes; a blink is the solid-cell > < squint; on a glance
@@ -44,6 +45,14 @@ bool face_drinking(void);
 // speaker on it (waves: sound on; a red slash: muted) for a moment and puts it
 // down. If the face isn't up and still, the sign waits a few seconds for it.
 void face_show_sign(bool sound_on);
+// A mood while Claude Code works (face_mood_policy.h; cola builds): the eyes
+// glance, squint, droop or shut by the clock, with a sweat drop when `sweat`.
+// MOOD_NONE gives the usual resting blinks back. Only while the face is up and
+// still (not drinking); a rise, a drop or a drink ends it.
+void     face_set_mood(FaceMood m, bool sweat);
+FaceMood face_current_mood(void);
+// A small caption under the face (the status word); NULL or "" hides it.
+void face_set_caption(const char* text);
 // QA, `clawd face <happy|heart|wink|surprise|sleepy>`: one of the rarer
 // expressions now. False if the face isn't up and still, or the word is unknown.
 bool face_debug(const char* what);

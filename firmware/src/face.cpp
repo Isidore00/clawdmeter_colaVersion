@@ -5,6 +5,7 @@
 #include "field.h"
 #include "face_motion.h"
 #include "reminder_policy.h"
+#include "face_mood_policy.h"
 #include "hal/board_caps.h"
 #include <lvgl.h>
 #include <Arduino.h>
@@ -22,6 +23,8 @@
 #define BLINK_MS   180
 #define BLINK_GAP  140
 #define GLANCE_MS  280
+
+LV_FONT_DECLARE(font_styrene_24);
 
 #define COL_FACE   theme_color(TH_CLAWD)      // Clawd orange by default
 #define COL_EYE    theme_color(TH_EYE)
@@ -74,6 +77,19 @@ static bool     expr_on = false;
 static FaceAct  expr_act = FACE_BLINK;
 static uint32_t expr_start = 0;
 static int      eye_scale = 100;      // the open eye's height in percent; wider too above 100
+
+// Moods while Claude Code works (face_mood_policy.h, driven by face_mood.cpp):
+// the eyes glance, squint or droop by the clock, a sweat drop near the usage
+// limit, and a small caption (the status word) under the face.
+static FaceMood mood = MOOD_NONE;
+static bool     sweat_on = false;
+static uint32_t mood_t0 = 0, mood_step_at = 0;
+static uint8_t  mood_phase = 0;
+static int      look_y = 0;           // the eyes look up (-) or down (+) by this many px
+static lv_obj_t* sweat_obj = NULL;
+static lv_obj_t* caption_lbl = NULL;
+static bool     caption_shown = false;
+static int      caption_y = 0;
 
 // Last geometry handed to LVGL per eye, so an unchanged eye costs nothing.
 struct EyeBox { int x, y, w, h, ew, eh; bool solid; uint8_t g; };   // solid: the box is exactly the open eye
@@ -265,7 +281,7 @@ static void apply_eyes(void) {
     h += h & 1; w += w & 1;
     for (int e = 0; e < 2; e++) {
         const int cx = eye_cx[e] + dx[e] + drift_x;
-        const int cy = pose.y + eye_top + eye_h0 / 2 + pose.eye_dy + drift_y;
+        const int cy = pose.y + eye_top + eye_h0 / 2 + pose.eye_dy + drift_y + look_y;
         EyeBox& b = eye_next[e];
         b.g = glyph[e];
         if (glyph[e] != GL_OPEN) { b.x = cx - glyph_cx(glyph[e]); b.y = cy - eye_h0 / 2; b.w = box_w0; b.h = box_h0; b.ew = eye_w0; b.eh = eye_h0; b.solid = false; }
@@ -464,6 +480,137 @@ static void drink_off(void) {
     if (sign_phase == 3) sign_place(sign_rest_y);    // the sign moves back to the middle
 }
 
+// ---- moods ------------------------------------------------------------------
+static lv_color_t caption_color(void) { return lv_color_mix(lv_color_black(), COL_FACE, 70); }
+
+static void make_mood_objs(void) {
+    sweat_obj = rect(root, 0, 0, S(20), S(30), lv_color_make(0x8F, 0xD8, 0xFF));
+    lv_obj_set_style_radius(sweat_obj, S(10), 0);
+    lv_obj_add_flag(sweat_obj, LV_OBJ_FLAG_HIDDEN);
+    caption_y = eye_top + eye_h0 + S(80);
+    caption_lbl = lv_label_create(root);
+    lv_obj_set_width(caption_lbl, W);
+    lv_obj_set_style_text_font(caption_lbl, &font_styrene_24, 0);
+    lv_obj_set_style_text_align(caption_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(caption_lbl, caption_color(), 0);
+    lv_label_set_long_mode(caption_lbl, LV_LABEL_LONG_CLIP);
+    lv_obj_clear_flag(caption_lbl, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(caption_lbl, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void place_mood_objs(void) {
+    if (!sweat_obj) return;
+    lv_obj_set_pos(sweat_obj, eye_cx[1] + S(70) + drift_x, eye_top + S(4) + drift_y);
+    lv_obj_set_pos(caption_lbl, drift_x, caption_y + drift_y);
+}
+
+static void show_sweat(bool on) {
+    if (!sweat_obj || on == sweat_on) return;
+    sweat_on = on;
+    if (on) { place_mood_objs(); lv_obj_clear_flag(sweat_obj, LV_OBJ_FLAG_HIDDEN); }
+    else    lv_obj_add_flag(sweat_obj, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void caption_hide(void) {
+    if (!caption_lbl || !caption_shown) return;
+    caption_shown = false;
+    lv_obj_add_flag(caption_lbl, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Ends any mood: eyes back to normal (the callers reset glyphs and scale).
+static void mood_clear(void) {
+    mood = MOOD_NONE;
+    look_y = 0;
+    show_sweat(false);
+    caption_hide();
+}
+
+static void glance_to(int target);
+
+static void mood_enter(FaceMood m, uint32_t now) {
+    mood = m;
+    mood_t0 = now;
+    mood_phase = 0;
+    mood_step_at = 0;
+    blink_phase = 0;
+    glance_phase = 0;
+    lv_anim_delete(&glance_cur, NULL);
+    expr_clear();
+    set_squint(false);
+    look_y = 0;
+    switch (m) {
+    case MOOD_STARTLED: eye_scale = 140; break;
+    case MOOD_THINK:    look_y = -S(22); break;
+    case MOOD_IDEA:     set_squint(true); break;
+    case MOOD_SLOW:     eye_scale = 45; look_y = S(8); mood_step_at = now + 4000; break;
+    case MOOD_NERVOUS:  eye_scale = 75; break;
+    case MOOD_HAPPY:    set_glyph(0, GL_HAPPY); set_glyph(1, GL_HAPPY); break;
+    case MOOD_HEART:    set_glyph(0, GL_HEART); set_glyph(1, GL_HEART); break;
+    case MOOD_ASLEEP:   set_glyph(0, GL_CLOSED); set_glyph(1, GL_CLOSED); break;
+    default: break;
+    }
+    if (m == MOOD_NONE) { eye_scale = 100; glance_to(0); }
+    apply_eyes();
+}
+
+static void mood_tick(uint32_t now) {
+    const uint32_t ms = now - mood_t0;
+    const bool due = (int32_t)(now - mood_step_at) >= 0;
+    switch (mood) {
+    case MOOD_STARTLED:
+        if (mood_phase == 0 && ms >= 700) {
+            mood_phase = 1;
+            eye_scale = 100;
+            apply_eyes();
+            face_blink(false);
+        }
+        break;
+    case MOOD_THINK:                       // up and over, slowly back and forth
+        if (due && !moving) {
+            mood_phase ^= 1;
+            glance_to(mood_phase ? glance_px * 3 / 2 : -glance_px);
+            mood_step_at = now + 1800;
+        }
+        break;
+    case MOOD_WORK:                        // "> <" in rhythm
+        if (due) {
+            mood_phase ^= 1;
+            set_squint(mood_phase != 0);
+            mood_step_at = now + (mood_phase ? 380 : 220);
+        }
+        break;
+    case MOOD_IDEA:                        // a blink, then "^ ^", then eyes up
+        if (mood_phase == 0 && ms >= 220) {
+            mood_phase = 1;
+            set_glyph(0, GL_HAPPY); set_glyph(1, GL_HAPPY);
+        } else if (mood_phase == 1 && ms >= 1900) {
+            mood_phase = 2;
+            set_glyph(0, GL_OPEN); set_glyph(1, GL_OPEN);
+            look_y = -S(10);
+            apply_eyes();
+        }
+        break;
+    case MOOD_SLOW:                        // drowsy, with a slow blink now and then
+        if (due) {
+            if (mood_phase == 0) { mood_phase = 1; eye_scale = 8; mood_step_at = now + 350; }
+            else { mood_phase = 0; eye_scale = 45; mood_step_at = now + clawd_rng_range(&rng, 4000, 7000); }
+            apply_eyes();
+        }
+        break;
+    case MOOD_NERVOUS:                     // small eyes darting about
+        if (due && !moving) {
+            mood_phase ^= 1;
+            glance_to(mood_phase ? glance_px / 2 : -glance_px / 2);
+            mood_step_at = now + 900;
+        }
+        break;
+    case MOOD_HAPPY:  set_glyph(0, GL_HAPPY);  set_glyph(1, GL_HAPPY);  break;
+    case MOOD_HEART:  set_glyph(0, GL_HEART);  set_glyph(1, GL_HEART);  break;
+    case MOOD_ASLEEP: set_glyph(0, GL_CLOSED); set_glyph(1, GL_CLOSED); break;
+    default: break;
+    }
+}
+
 void face_init(void) {
     const BoardCaps& c = board_caps();
     W = c.width; H = c.height;
@@ -502,6 +649,7 @@ void face_init(void) {
     if (FACE_EXTRAS) {
         make_cup();
         make_sign();
+        make_mood_objs();
     }
     pose = gone_pose();
     place_eyes(0);
@@ -576,6 +724,7 @@ static void rise(int interest) {
     if (!root) return;
     interest_g = interest;
     blink_phase = 0; glance_phase = 0;
+    mood_clear();
     drink_off();
     if (sign_phase >= 2) sign_hide();         // a sign still waiting (1) shows once it's up
     set_squint(false);
@@ -598,6 +747,7 @@ void face_rise_toward(int x) {
 void face_drop(void) {
     if (!root || !visible) return;
     resting = false;
+    mood_clear();
     drink_off();
     sign_hide();
     // Eyes open and front-facing as it goes: he's looking at you, then away.
@@ -616,6 +766,7 @@ void face_hide_now(void) {
     lv_anim_delete(&glance_cur, NULL);
     if (moving) perf_end(perf_window());
     moving = false; resting = false;
+    mood_clear();
     drink_off();
     sign_hide();
     blink_phase = 0; glance_phase = 0; glance_cur = 0; interest_g = 0;
@@ -644,6 +795,7 @@ void face_apply_theme(void) {
         lv_obj_set_style_bg_color(eye_open[e], COL_EYE, 0);
         for (lv_obj_t* o : squint[e]) if (o) lv_obj_set_style_bg_color(o, COL_EYE, 0);
     }
+    if (caption_lbl) lv_obj_set_style_text_color(caption_lbl, caption_color(), 0);
     if (sign_box) {
         lv_obj_set_style_bg_color(sign_box, COL_EYE, 0);
         lv_obj_set_style_line_color(sign_cone, COL_EYE, 0);
@@ -738,8 +890,10 @@ void face_tick(void) {
         face_drift_for_step(drift_step, unit, &drift_x, &drift_y);
         apply_eyes();
         place_cup();
+        place_mood_objs();
         if (sign_phase == 3) sign_place(sign_rest_y);
     }
+    if (mood != MOOD_NONE && !moving && !drinking) mood_tick(now);
     if (drinking) {
         const int pct = reminder_water_pct(now - drink_start, drink_ms);
         if (pct != water_shown) place_water(pct);
@@ -760,7 +914,7 @@ void face_tick(void) {
     }
 
     if (expr_on) expr_tick(now);
-    if (!resting || moving || blink_phase || glance_phase || expr_on || drinking) return;
+    if (!resting || moving || blink_phase || glance_phase || expr_on || drinking || mood != MOOD_NONE) return;
     if ((int32_t)(now - next_act_at) < 0) return;
     const FacePlan p = face_plan_next(&rng, &clawd_tuning());
     switch (p.act) {
@@ -796,6 +950,7 @@ void face_drink(bool on, uint32_t ms) {
     if (!root) return;
     if (!on) { drink_off(); return; }
     if (!cup || !visible || moving) return;
+    mood_clear();
     blink_phase = 0;
     expr_clear();
     lv_anim_delete(&glance_cur, NULL);
@@ -826,4 +981,24 @@ void face_show_sign(bool sound_on) {
     const uint32_t now = millis();
     if (visible && !moving) sign_start(now);
     else { sign_phase = 1; sign_t0 = now; }
+}
+
+void face_set_mood(FaceMood m, bool sweat) {
+    if (!root || !sweat_obj) return;
+    if (!visible || moving || drinking) return;
+    if (m != mood) mood_enter(m, millis());
+    show_sweat(sweat && m != MOOD_NONE);
+}
+
+FaceMood face_current_mood(void) { return mood; }
+
+void face_set_caption(const char* text) {
+    if (!caption_lbl) return;
+    if (!text || !text[0] || !visible || drinking) { caption_hide(); return; }
+    lv_label_set_text(caption_lbl, text);
+    place_mood_objs();
+    if (!caption_shown) {
+        caption_shown = true;
+        lv_obj_clear_flag(caption_lbl, LV_OBJ_FLAG_HIDDEN);
+    }
 }

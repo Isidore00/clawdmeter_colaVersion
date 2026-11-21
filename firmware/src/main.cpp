@@ -13,6 +13,7 @@
 #include "cola.h"
 #include "room.h"
 #include "reminder.h"
+#include "face_mood.h"
 #include "clawd_director.h"
 #include "usage_rate.h"
 #include "signals.h"
@@ -519,6 +520,7 @@ void loop() {
     cola_tick();
     room_tick();
     reminder_tick();
+    face_mood_tick();
     director_tick();
     if (director_take_dismissed()) ble_send_dismiss();
     // Rotation transition (blank + ramp) would fight the idle fade — skip
@@ -685,6 +687,7 @@ void loop() {
             cola_on_payload(&usage, &sig);   // after the ding above: it goes first
             room_on_payload(&usage);
             reminder_on_payload(&usage);
+            face_mood_on_payload(&usage, &sig);
             if (g_after != g_before)
                 Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
                     g_before, g_after, usage.session_pct);
