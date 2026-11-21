@@ -13,6 +13,7 @@ use super::settings::SettingsView;
 use super::theme::{Theme, FONT_DISPLAY, R_PILL};
 use super::widgets::{button, card, clawd, dot, notice, para, pill, ButtonKind, Tone};
 use super::{live_status, REFRESH};
+use crate::i18n::{tr, trf};
 use crate::Page;
 
 /// The wizard's steps.
@@ -217,14 +218,14 @@ impl SetupView {
                     } else {
                         t.track
                     }))
-                    .child(*label),
+                    .child(tr(*label)),
             );
         }
         row
     }
 
     fn title(text: &'static str) -> impl IntoElement {
-        div().font_family(FONT_DISPLAY).text_size(px(26.)).text_center().child(text)
+        div().font_family(FONT_DISPLAY).text_size(px(26.)).text_center().child(tr(text))
     }
 
     fn welcome(&self, t: &Theme) -> gpui::Div {
@@ -252,7 +253,7 @@ impl SetupView {
                     .text_center()
                     .text_size(px(12.5))
                     .text_color(t.mute)
-                    .child(format!("Usage will be read with {}.", crate::claude_label(c, &self.paths.home)))
+                    .child(trf("Usage will be read with {1}.", &[&crate::claude_label(c, &self.paths.home)]))
                     .into_any_element(),
                 None => notice(
                     t,
@@ -298,12 +299,12 @@ impl SetupView {
                  send key presses.",
             )))
             .child(
-                card(t).w(px(520.)).child(div().text_size(px(14.)).line_height(px(21.)).child(how)).child(
+                card(t).w(px(520.)).child(div().text_size(px(14.)).line_height(px(21.)).child(tr(how))).child(
                     div()
                         .text_size(px(12.5))
                         .text_color(t.mute)
                         .line_height(px(18.))
-                        .child(unpair_hint(self.board_info(cx))),
+                        .child(tr(unpair_hint(self.board_info(cx)))),
                 ),
             )
             .child(status)
@@ -324,13 +325,12 @@ impl SetupView {
         // Only every account installed skips the list; an unreadable one
         // stays in view with its error.
         if installed > 0 && installed == total {
-            let accounts =
-                if installed == 1 { "your account".to_string() } else { format!("all {installed} accounts") };
-            d = d.child(div().flex().justify_center().child(pill(
-                t,
-                SharedString::from(format!("Hooks installed in {accounts}")),
-                Tone::Ok,
-            )));
+            let text = if installed == 1 {
+                tr("Hooks installed in your account").to_string()
+            } else {
+                trf("Hooks installed in all {1} accounts", &[&installed.to_string()])
+            };
+            d = d.child(div().flex().justify_center().child(pill(t, SharedString::from(text), Tone::Ok)));
         } else {
             d = d.child(self.settings.clone());
         }
@@ -357,21 +357,28 @@ impl SetupView {
         let hooks: (SharedString, Tone) = {
             let unread = match unreadable {
                 0 => String::new(),
-                1 => " Couldn't read 1 account.".into(),
-                n => format!(" Couldn't read {n} accounts."),
+                1 => tr(" Couldn't read 1 account.").to_string(),
+                n => trf(" Couldn't read {1} accounts.", &[&n.to_string()]),
             };
             match installed {
-                0 if unreadable == 0 => ("Hooks not installed. Add them from Hooks.".into(), Tone::Plain),
+                0 if unreadable == 0 => (tr("Hooks not installed. Add them from Hooks."), Tone::Plain),
                 n => {
                     let tone = if n == total { Tone::Ok } else { Tone::Plain };
-                    (format!("Hooks installed in {n} of {total} accounts.{unread}").into(), tone)
+                    (
+                        trf(
+                            "Hooks installed in {1} of {2} accounts.{3}",
+                            &[&n.to_string(), &total.to_string(), &unread],
+                        )
+                        .into(),
+                        tone,
+                    )
                 }
             }
         };
         let row = |(text, tone): (SharedString, Tone)| {
             div().flex().items_center().gap(px(10.)).child(dot(t, tone)).child(div().text_size(px(14.)).child(text))
         };
-        let (board, link) = ((SharedString::from(board.0), board.1), (SharedString::from(link.0), link.1));
+        let (board, link) = ((tr(board.0), board.1), (tr(link.0), link.1));
         let after = match (self.running, self.windowed) {
             (false, _) => None,
             (true, true) => Some("Keep this window open to update usage."),
@@ -524,7 +531,7 @@ impl Render for SetupView {
                     .cursor_pointer()
                     .hover(|s| s.text_color(t.text))
                     .when(self.step != Step::Done && !busy, |d| {
-                        d.child("Skip setup").on_click(cx.listener(|v, _, _, cx| v.finish(cx)))
+                        d.child(tr("Skip setup")).on_click(cx.listener(|v, _, _, cx| v.finish(cx)))
                     }),
             )
             .child(right);

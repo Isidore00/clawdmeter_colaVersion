@@ -10,6 +10,7 @@ use super::widgets::{
 };
 use super::{command, live_status, not_running_text, Navigate, REFRESH};
 use crate::art::TrayState;
+use crate::i18n::{tr, trf};
 use crate::ipc::{AppCommand, StatusSnapshot};
 use crate::{ago, tilde, Page};
 
@@ -84,10 +85,10 @@ const REFRESH_GIVE_UP_SECS: i64 = 60;
 /// "1 min 40 s" for a wait.
 fn wait_text(secs: i64) -> String {
     match secs.max(1) {
-        s if s < 60 => format!("{s} s"),
-        s if s < 3600 && s % 60 == 0 => format!("{} min", s / 60),
-        s if s < 3600 => format!("{} min {} s", s / 60, s % 60),
-        s => format!("{} h {} min", s / 3600, (s % 3600) / 60),
+        s if s < 60 => trf("{1} s", &[&s.to_string()]),
+        s if s < 3600 && s % 60 == 0 => trf("{1} min", &[&(s / 60).to_string()]),
+        s if s < 3600 => trf("{1} min {2} s", &[&(s / 60).to_string(), &(s % 60).to_string()]),
+        s => trf("{1} h {2} min", &[&(s / 3600).to_string(), &((s % 3600) / 60).to_string()]),
     }
 }
 
@@ -148,11 +149,11 @@ pub fn state_title(s: &StatusSnapshot) -> &'static str {
 
 /// The device's reset line (`format_reset_time` in firmware/src/ui.cpp).
 pub fn reset_text(resets_at: Option<i64>, now: i64, none: &str) -> String {
-    let Some(t) = resets_at else { return none.to_owned() };
+    let Some(t) = resets_at else { return tr(none).to_string() };
     match (t - now).max(0) / 60 {
-        m if m < 60 => format!("Resets in {m}m"),
-        m if m < 1440 => format!("Resets in {}h {}m", m / 60, m % 60),
-        m => format!("Resets in {}d {}h", m / 1440, (m % 1440) / 60),
+        m if m < 60 => trf("Resets in {1}m", &[&m.to_string()]),
+        m if m < 1440 => trf("Resets in {1}h {2}m", &[&(m / 60).to_string(), &(m % 60).to_string()]),
+        m => trf("Resets in {1}d {2}h", &[&(m / 1440).to_string(), &((m % 1440) / 60).to_string()]),
     }
 }
 
@@ -195,7 +196,7 @@ fn meter(t: &Theme, label: &'static str, pct: Option<u32>, reset: String) -> imp
                         .bg(t.track)
                         .text_size(px(14.))
                         .text_color(t.text)
-                        .child(label),
+                        .child(tr(label)),
                 ),
         )
         .child(
@@ -219,10 +220,10 @@ impl Render for OverviewView {
             None => (Tone::Plain, "Not running", not_running_text().to_string()),
             Some(s) => {
                 let sub = match (&s.account, s.age(now)) {
-                    _ if s.logged_out => "Open Claude Code in a terminal and sign in.".into(),
-                    (Some(a), Some(age)) => format!("{} · updated {}", tilde(a, &home), ago(age)),
+                    _ if s.logged_out => tr("Open Claude Code in a terminal and sign in.").to_string(),
+                    (Some(a), Some(age)) => trf("{1} · updated {2}", &[&tilde(a, &home), &ago(age)]),
                     (Some(a), None) => tilde(a, &home),
-                    (None, _) => "No usage data yet".into(),
+                    (None, _) => tr("No usage data yet").to_string(),
                 };
                 (state_tone(s.tray_state()), state_title(s), sub)
             }
@@ -246,7 +247,7 @@ impl Render for OverviewView {
                             .items_center()
                             .gap(px(10.))
                             .child(dot(&t, tone))
-                            .child(div().font_family(FONT_DISPLAY).text_size(px(24.)).child(title)),
+                            .child(div().font_family(FONT_DISPLAY).text_size(px(24.)).child(tr(title))),
                     )
                     .child(div().text_size(px(13.)).text_color(t.mute).truncate().child(sub)),
             )
@@ -262,7 +263,7 @@ impl Render for OverviewView {
                 .cursor_pointer()
                 .hover(move |s| s.text_color(text))
                 .on_click(cx.listener(|_, _, _, cx| cx.emit(Navigate(Page::Setup))))
-                .child("Run setup guide again"),
+                .child(tr("Run setup guide again")),
         );
         let on = self.desktop_chime;
         let chime = field(
@@ -296,7 +297,7 @@ impl Render for OverviewView {
         if let Some(v) = s.update_available() {
             let v = v.trim_start_matches('v').to_owned();
             page = page.child(
-                notice(&t, Tone::Accent, format!("Firmware v{v} is available. Connect USB to update.")).child(
+                notice(&t, Tone::Accent, trf("Firmware v{1} is available. Connect USB to update.", &[&v])).child(
                     div().flex().pl(px(18.)).child(button(
                         &t,
                         "go-update",
@@ -318,11 +319,11 @@ impl OverviewView {
     fn refresh_control(&self, t: &Theme, s: &StatusSnapshot, now: i64, cx: &mut Context<Self>) -> impl IntoElement {
         let state = refresh_state(s, self.refreshing.is_some(), now);
         let note: Option<SharedString> = match &state {
-            RefreshState::Checking => Some("Checking…".into()),
-            RefreshState::Wait(secs) => Some(format!("Can check again in {}", wait_text(*secs)).into()),
+            RefreshState::Checking => Some(tr("Checking…")),
+            RefreshState::Wait(secs) => Some(trf("Can check again in {1}", &[&wait_text(*secs)]).into()),
             RefreshState::Paused(until) => Some(
-                clawdmeter_core::usage::paused_message(*until, clawdmeter_core::platform::utc_offset_secs())
-                    .trim_end_matches('.')
+                tr(clawdmeter_core::usage::paused_message(*until, clawdmeter_core::platform::utc_offset_secs()))
+                    .trim_end_matches(['.', '。'])
                     .to_owned()
                     .into(),
             ),

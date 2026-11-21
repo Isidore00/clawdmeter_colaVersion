@@ -373,7 +373,7 @@ pub fn command(paths: &Paths, cmd: AppCommand) {
 
 /// Text for "the daemon isn't running" banners.
 pub fn not_running_text() -> SharedString {
-    "Start Clawdmeter from your app menu, or run clawdmeter in a terminal.".into()
+    crate::i18n::tr("Start Clawdmeter from your app menu, or run clawdmeter in a terminal.")
 }
 
 /// Run blocking work off the UI thread, then hand the result to the view.

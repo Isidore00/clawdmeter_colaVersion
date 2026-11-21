@@ -11,6 +11,7 @@ use gpui::{
 
 use super::theme::{Theme, FONT_BODY, FONT_DISPLAY, FONT_MONO, R_ITEM, R_M, R_PILL, R_S};
 use crate::art::{cell_rgb, idle_cell, IDLE_H, IDLE_W};
+use crate::i18n::tr;
 
 type Handler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -31,7 +32,7 @@ pub enum ButtonKind {
 pub fn button(
     t: &Theme,
     id: impl Into<ElementId>,
-    label: impl Into<SharedString>,
+    label: impl AsRef<str>,
     kind: ButtonKind,
     enabled: bool,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -64,7 +65,7 @@ pub fn button(
         .text_color(fg)
         .text_size(px(size))
         .whitespace_nowrap()
-        .child(label.into());
+        .child(tr(label));
     if enabled {
         let handler: Handler = Box::new(on_click);
         el.cursor_pointer().hover(move |s| s.bg(hover_bg)).on_click(move |e, w, cx| handler(e, w, cx))
@@ -102,7 +103,7 @@ impl Render for Tip {
 
 /// A tooltip builder for `.tooltip(…)`: names an icon-only control.
 pub fn tooltip(text: &'static str) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
-    move |_, cx| cx.new(|_| Tip(text.into())).into()
+    move |_, cx| cx.new(|_| Tip(tr(text))).into()
 }
 
 /// A square icon-only button (page actions) named by `label` in its
@@ -150,7 +151,7 @@ pub fn icon_button(
 /// A message box: a tone-coloured dot, body text in the normal colour so it
 /// stays readable, optional actions underneath. Problems (warn, bad) tint
 /// the box too; everything else stays neutral.
-pub fn notice(t: &Theme, tone: Tone, text: impl Into<SharedString>) -> gpui::Div {
+pub fn notice(t: &Theme, tone: Tone, text: impl AsRef<str>) -> gpui::Div {
     let c = tone_color(t, tone);
     let loud = matches!(tone, Tone::Warn | Tone::Bad);
     div()
@@ -163,14 +164,16 @@ pub fn notice(t: &Theme, tone: Tone, text: impl Into<SharedString>) -> gpui::Div
         .bg(if loud { tint(c, 0.08) } else { t.panel.into() })
         .border_1()
         .border_color(if loud { tint(c, 0.45) } else { t.line.into() })
-        .child(div().flex().items_start().gap(px(10.)).child(div().mt(px(6.)).child(dot(t, tone))).child(
-            div().flex_1().min_w_0().text_size(px(13.)).line_height(px(19.)).text_color(t.text).child(text.into()),
-        ))
+        .child(
+            div().flex().items_start().gap(px(10.)).child(div().mt(px(6.)).child(dot(t, tone))).child(
+                div().flex_1().min_w_0().text_size(px(13.)).line_height(px(19.)).text_color(t.text).child(tr(text)),
+            ),
+        )
 }
 
 /// Small uppercase-free caption above a block (diffs, logs).
-pub fn caption(t: &Theme, text: impl Into<SharedString>) -> impl IntoElement {
-    div().text_size(px(12.)).text_color(t.mute).child(text.into())
+pub fn caption(t: &Theme, text: impl AsRef<str>) -> impl IntoElement {
+    div().text_size(px(12.)).text_color(t.mute).child(tr(text))
 }
 
 /// The device's bar colour for a usage percentage: green below 50 %,
@@ -226,7 +229,7 @@ fn tint(c: Rgba, alpha: f32) -> Hsla {
 }
 
 /// A small status chip.
-pub fn pill(t: &Theme, text: impl Into<SharedString>, tone: Tone) -> impl IntoElement {
+pub fn pill(t: &Theme, text: impl AsRef<str>, tone: Tone) -> impl IntoElement {
     let c = tone_color(t, tone);
     div()
         .flex()
@@ -241,7 +244,7 @@ pub fn pill(t: &Theme, text: impl Into<SharedString>, tone: Tone) -> impl IntoEl
         .text_size(px(12.))
         .whitespace_nowrap()
         .child(div().size(px(6.)).rounded(px(R_PILL)).bg(c))
-        .child(text.into())
+        .child(tr(text))
 }
 
 /// A round status dot.
@@ -320,8 +323,8 @@ pub fn checkbox(
                 .flex()
                 .flex_col()
                 .gap(px(1.))
-                .child(div().text_size(px(14.)).text_color(t.text).child(label))
-                .child(div().text_size(px(12.5)).text_color(t.mute).child(help)),
+                .child(div().text_size(px(14.)).text_color(t.text).child(tr(label)))
+                .child(div().text_size(px(12.5)).text_color(t.mute).child(tr(help))),
         )
 }
 
@@ -362,7 +365,7 @@ pub fn segmented<V: Clone + PartialEq + 'static>(
                 (true, false) => t.dim,
             })
             .when(on, |d| d.bg(if enabled { t.selected } else { t.hover }))
-            .child(SharedString::from(label.to_string()));
+            .child(tr(*label));
         if enabled && !on {
             seg = seg.cursor_pointer().hover(|s| s.text_color(t.text)).on_click(move |_, w, cx| cb(v.clone(), w, cx));
         }
@@ -452,7 +455,7 @@ pub fn stepped_slider(
             .text_size(px(12.5))
             .whitespace_nowrap()
             .text_color(if on && enabled { t.text } else { t.mute })
-            .child(SharedString::from(text.to_string()));
+            .child(tr(text));
         rail = rail.child(if i == 1 {
             label.left(px(-KNOB / 2.))
         } else if i == count {
@@ -494,12 +497,7 @@ pub fn stepped_slider(
 }
 
 /// A settings row: label + help on the left, the control on the right.
-pub fn field(
-    t: &Theme,
-    label: impl Into<SharedString>,
-    help: impl Into<SharedString>,
-    control: impl IntoElement,
-) -> impl IntoElement {
+pub fn field(t: &Theme, label: impl AsRef<str>, help: impl AsRef<str>, control: impl IntoElement) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -514,8 +512,8 @@ pub fn field(
                 .flex_1()
                 .min_w_0()
                 .gap(px(3.))
-                .child(div().text_size(px(14.)).text_color(t.text).child(label.into()))
-                .child(div().text_size(px(12.5)).text_color(t.mute).child(help.into())),
+                .child(div().text_size(px(14.)).text_color(t.text).child(tr(label)))
+                .child(div().text_size(px(12.5)).text_color(t.mute).child(tr(help))),
         )
         .child(div().flex_shrink_0().child(control))
 }
@@ -524,8 +522,8 @@ pub fn field(
 /// help, then the control underneath.
 pub fn field_stacked(
     t: &Theme,
-    label: impl Into<SharedString>,
-    help: impl Into<SharedString>,
+    label: impl AsRef<str>,
+    help: impl AsRef<str>,
     control: impl IntoElement,
 ) -> impl IntoElement {
     div()
@@ -535,24 +533,24 @@ pub fn field_stacked(
         .py(px(12.))
         .border_b_1()
         .border_color(t.line)
-        .child(div().text_size(px(14.)).text_color(t.text).child(label.into()))
-        .child(div().text_size(px(12.5)).text_color(t.mute).child(help.into()))
+        .child(div().text_size(px(14.)).text_color(t.text).child(tr(label)))
+        .child(div().text_size(px(12.5)).text_color(t.mute).child(tr(help)))
         .child(div().flex().pt(px(8.)).child(control))
 }
 
 /// Section heading in the display face.
-pub fn heading(t: &Theme, text: impl Into<SharedString>) -> impl IntoElement {
-    div().font_family(FONT_DISPLAY).text_size(px(20.)).text_color(t.text).child(text.into())
+pub fn heading(t: &Theme, text: impl AsRef<str>) -> impl IntoElement {
+    div().font_family(FONT_DISPLAY).text_size(px(20.)).text_color(t.text).child(tr(text))
 }
 
 /// A heading inside a pane.
-pub fn subheading(t: &Theme, text: impl Into<SharedString>) -> impl IntoElement {
-    div().text_size(px(15.)).text_color(t.text).child(text.into())
+pub fn subheading(t: &Theme, text: impl AsRef<str>) -> impl IntoElement {
+    div().text_size(px(15.)).text_color(t.text).child(tr(text))
 }
 
 /// Secondary paragraph text.
-pub fn para(t: &Theme, text: impl Into<SharedString>) -> impl IntoElement {
-    div().text_size(px(13.5)).line_height(px(20.)).text_color(t.dim).child(text.into())
+pub fn para(t: &Theme, text: impl AsRef<str>) -> impl IntoElement {
+    div().text_size(px(13.5)).line_height(px(20.)).text_color(t.dim).child(tr(text))
 }
 
 /// Inline data in the mono face.
@@ -574,8 +572,8 @@ pub fn kv(t: &Theme, rows: Vec<(&'static str, SharedString)>) -> impl IntoElemen
             div()
                 .flex()
                 .gap(px(12.))
-                .child(div().w(px(76.)).flex_shrink_0().text_size(px(13.)).text_color(t.mute).child(k))
-                .child(div().flex_1().min_w_0().truncate().text_size(px(13.)).text_color(t.text).child(v)),
+                .child(div().w(px(76.)).flex_shrink_0().text_size(px(13.)).text_color(t.mute).child(tr(k)))
+                .child(div().flex_1().min_w_0().truncate().text_size(px(13.)).text_color(t.text).child(tr(v))),
         );
     }
     d

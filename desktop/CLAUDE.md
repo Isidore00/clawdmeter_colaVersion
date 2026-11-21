@@ -106,7 +106,7 @@ is faked behind `FlashHardware`.
   window watches only while the Device page shows; the
   daemon hands changes to `Engine::set_appearance`, which sends them like any
   device setting), `claude_path`,
-  `release_repo`, `update_check`, `onboarding_done`, `alert_on` (alert kinds
+  `release_repo`, `update_check`, `language` (`auto`, `en` or `zh-TW`; see Window and UI), `onboarding_done`, `alert_on` (alert kinds
   the daemon lets through: the hook records `k` from `hook_event_name` /
   `notification_type` and `engine.on_attention` drops the rest; default all
   but `idle`).
@@ -242,6 +242,16 @@ Per account (`probe.rs`, `oauth.rs`):
   reports "server" even with no decoration manager, so
   `decorations::wanted()` probes the Wayland registry itself.
   `CLAWDMETER_DECORATIONS=client|server` overrides.
+- **Interface language** (`i18n.rs`, `i18n/zh_tw.rs`): the English text in the
+  source is the key. `tr()` looks it up in the Traditional Chinese (Taiwan)
+  table (the shared widgets translate their own labels, so most call sites
+  need nothing); `trf("… {1} …", &[..])` fills templates; sentences built
+  elsewhere with `format!` (core's error messages) match table entries that
+  have `{1}` placeholders. `language = auto` follows the OS locale
+  (`platform::system_locale`), tests always get English. Set
+  `CLAWDMETER_I18N_DEBUG=1` to log strings the table lacks. Config keys,
+  protocol keys, CLI flags, logs and test ids stay English. GPUI falls back to
+  a system font for CJK.
 - Board art is bundled by `ui::Assets` and drawn with
   `img(board.illustration())`. Use `img()`, not `svg()`: `svg()` renders a
   monochrome mask, `img()` renders the SVG through resvg in full colour.
