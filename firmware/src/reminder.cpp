@@ -8,6 +8,7 @@
 #include "idle.h"
 #include "hal/sound_hal.h"
 #include <Arduino.h>
+#include <Preferences.h>
 #include <string.h>
 
 // How long her line may wait for the ding to finish before it's dropped.
@@ -17,6 +18,7 @@ static bool          have_clock = false;
 static long          clock_epoch = 0;
 static uint32_t      clock_ms = 0;
 static ReminderClock clocks[8];
+static bool          enabled = true;       // the switch (NVS clawdmeter/remind_on, on by default)
 
 static bool     active = false;
 static int      active_prog = -1;
@@ -78,6 +80,19 @@ void reminder_on_payload(const UsageData* d) {
 
 bool reminder_active(void) { return active; }
 
+bool reminder_enabled(void) { return enabled; }
+
+void reminder_set_enabled(bool on) {
+    if (on == enabled) return;
+    enabled = on;
+    if (!on) end(true);                   // one up now goes away like an answered one
+    Preferences prefs;
+    prefs.begin("clawdmeter", false);
+    prefs.putBool("remind_on", enabled);
+    prefs.end();
+    Serial.printf("{\"remind_on\":%s}\n", enabled ? "true" : "false");
+}
+
 void reminder_ack(void) { end(true); }
 
 void reminder_tick(void) {
@@ -85,6 +100,10 @@ void reminder_tick(void) {
     if (!inited) {
         inited = true;
         for (auto& c : clocks) reminder_clock_init(&c);
+        Preferences prefs;
+        prefs.begin("clawdmeter", true);
+        enabled = prefs.getBool("remind_on", true);
+        prefs.end();
     }
     const uint32_t now = millis();
     if (active && (uint32_t)(now - started_ms) >= REMIND_SHOW_MS) end(false);
@@ -105,15 +124,19 @@ void reminder_tick(void) {
     if (!have_clock) return;
     const long t = clock_now_s();
     for (int i = 0; i < REMINDER_PROGRAM_COUNT && i < (int)(sizeof(clocks) / sizeof(clocks[0])); i++)
-        if (reminder_clock_due(&clocks[i], &REMINDER_PROGRAMS[i], t)) start(i);
+        // Off: the clocks keep running so turning it on waits for the next
+        // boundary instead of firing for one that already passed.
+        if (reminder_clock_due(&clocks[i], &REMINDER_PROGRAMS[i], t) && enabled) start(i);
 }
 
 bool reminder_debug(const char* what) {
     if (strcmp(what, "stop") == 0) { end(true); return true; }
+    if (strcmp(what, "on") == 0)  { reminder_set_enabled(true);  return true; }
+    if (strcmp(what, "off") == 0) { reminder_set_enabled(false); return true; }
     if (strcmp(what, "status") == 0) {
         const long t = have_clock ? clock_now_s() : 0;
-        Serial.printf("{\"remind\":{\"clock\":%s,\"weekday\":%d,\"minute\":%d,\"active\":%s",
-                      have_clock ? "true" : "false", have_clock ? clock_weekday(t) : -1,
+        Serial.printf("{\"remind\":{\"enabled\":%s,\"clock\":%s,\"weekday\":%d,\"minute\":%d,\"active\":%s",
+                      enabled ? "true" : "false", have_clock ? "true" : "false", have_clock ? clock_weekday(t) : -1,
                       have_clock ? clock_minute_of_day(t) : -1, active ? "true" : "false");
         if (active) Serial.printf(",\"program\":\"%s\",\"ms\":%lu", REMINDER_PROGRAMS[active_prog].name,
                                   (unsigned long)(millis() - started_ms));

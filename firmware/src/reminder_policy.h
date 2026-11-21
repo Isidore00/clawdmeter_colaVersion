@@ -27,6 +27,7 @@ struct ReminderProgram {
 };
 
 #define REMIND_WEEKDAYS 0x3E  // Monday to Friday
+#define REMIND_EVERYDAY 0x7F  // all seven days
 
 // The programs that run, in order. Fixed for now (no app settings yet).
 extern const ReminderProgram REMINDER_PROGRAMS[];

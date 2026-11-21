@@ -279,7 +279,7 @@ static void check_serial_cmd() {
                 Serial.printf("{\"room_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 5, ok ? "true" : "false");
             }
             else if (strncmp(cmd_buf, "remind ", 7) == 0) {
-                // QA: `remind water` (that reminder now), `remind stop`, `remind status`. See reminder.h.
+                // QA: `remind water` (that reminder now), `remind on|off`, `remind stop`, `remind status`. See reminder.h.
                 const bool ok = reminder_debug(cmd_buf + 7);
                 Serial.printf("{\"remind_cmd\":\"%s\",\"ok\":%s}\n", cmd_buf + 7, ok ? "true" : "false");
             }

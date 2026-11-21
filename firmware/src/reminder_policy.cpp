@@ -1,8 +1,8 @@
 #include "reminder_policy.h"
 
 const ReminderProgram REMINDER_PROGRAMS[] = {
-    // Drink water: every 15 min, Monday to Friday, 08:00 to 20:00 (the last at 19:45).
-    { "water", REMIND_WATER, 15, 8 * 60, 20 * 60, REMIND_WEEKDAYS },
+    // Drink water: every 15 min, every day, 08:00 to 20:00 (the last at 19:45).
+    { "water", REMIND_WATER, 15, 8 * 60, 20 * 60, REMIND_EVERYDAY },
 };
 const int REMINDER_PROGRAM_COUNT = (int)(sizeof(REMINDER_PROGRAMS) / sizeof(REMINDER_PROGRAMS[0]));
 

@@ -24,9 +24,11 @@
 void reminder_tick(void);
 void reminder_on_payload(const UsageData* d);   // the app's wall clock (`t`)
 bool reminder_active(void);
+bool reminder_enabled(void);                    // the on/off switch (kept in NVS)
+void reminder_set_enabled(bool on);             // off: nothing fires and one that is up ends
 void reminder_ack(void);                        // a tap or a button answered it
 // QA, the `remind <what>` serial command: <program name> (e.g. `water`: that
-// reminder now) | stop | status. False for an unknown word.
+// reminder now) | on | off | stop | status. False for an unknown word.
 bool reminder_debug(const char* what);
 
 #else
@@ -34,6 +36,8 @@ bool reminder_debug(const char* what);
 static inline void reminder_tick(void) {}
 static inline void reminder_on_payload(const UsageData*) {}
 static inline bool reminder_active(void) { return false; }
+static inline bool reminder_enabled(void) { return false; }
+static inline void reminder_set_enabled(bool) {}
 static inline void reminder_ack(void) {}
 static inline bool reminder_debug(const char*) { return false; }
 
