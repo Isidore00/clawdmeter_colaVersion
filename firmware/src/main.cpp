@@ -666,8 +666,13 @@ void loop() {
             // A prompt (or you're back after a gap): you're at the computer,
             // so a dimmed or dark panel wakes before Clawd notices you. A
             // Stop or tool activity doesn't: Claude working alone isn't you.
+            // (The cola builds sleep by touch alone: Claude Code working is not you
+            // at the board, so a prompt neither wakes the panel nor restarts its
+            // 10 minutes; an alert still does, below.)
+#if !CLAWD_COLA
             if (sig.event_fired && (sig.event == 'p' || sig.event == 'b'))
                 idle_note_activity();
+#endif
             if (usage.liveliness > 0) liveliness_set(usage.liveliness);
             if (usage.attn_anim_s >= 0) attn_anim_set(usage.attn_anim_s);
             director_on_payload(&usage, &sig);
