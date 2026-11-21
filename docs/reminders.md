@@ -76,7 +76,7 @@ finger lifts, if it stayed within 24 px.
 | Command | |
 | --- | --- |
 | `remind water` | that reminder now (any day, any time) |
-| `remind on\|off` | the reminders' switch: off stops all of them (one that is up ends), on starts again at the next quarter hour. Kept in NVS (`clawdmeter/remind_on`, on by default) |
+| `remind on\|off` | the reminders' switch: off stops all of them (one that is up ends), on starts again at the next quarter hour. Kept in NVS (`clawdmeter/remind_on`, on by default); the desktop app's Water reminder switch (`rm`) sets it again on every data payload, so a serial change lasts only until the next one |
 | `remind stop` | end it as if answered |
 | `remind status` | clock known, weekday (0 Sunday), minute of the day, whether one is up, and when each program next fires |
 | `room voice on\|off` | her lines (also what the long press switches) |

@@ -104,7 +104,7 @@ pub static TABLE: &[(&str, &str)] = &[
     ("Orange face caption", "橘色臉孔說明文字"),
     ("On the cola build, a small faint line under the orange face with what Claude Code is doing.", "在 cola 版本中，橘色臉孔下方會以淡淡的小字顯示 Claude Code 正在做什麼。"),
     ("Water reminder", "喝水提醒"),
-    ("On the cola build, the orange face reminds you to drink water every 15 minutes on weekdays. Needs the clock setting on.", "在 cola 版本中，橘色臉孔會在平日每 15 分鐘提醒你喝水。需要開啟時鐘設定。"),
+    ("On the cola build, the orange face reminds you to drink water every 15 minutes, 08:00 to 20:00, every day. Needs the clock setting on.", "在 cola 版本中，橘色臉孔會每天 08:00 到 20:00 每 15 分鐘提醒你喝水。需要開啟時鐘設定。"),
     ("Alert chime", "提醒提示音"),
     ("Chimes when Claude needs you, on boards with a speaker. Mute from the tray until restart.", "Claude 需要你時發出提示音（限有喇叭的開發板）。可從系統匣靜音，重新啟動後恢復。"),
     ("Session reset chime", "工作階段重置提示音"),

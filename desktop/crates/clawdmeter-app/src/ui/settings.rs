@@ -736,7 +736,7 @@ impl SettingsView {
         pane = pane.child(field(
             t,
             "Water reminder",
-            "On the cola build, the orange face reminds you to drink water every 15 minutes on weekdays. Needs the clock setting on.",
+            "On the cola build, the orange face reminds you to drink water every 15 minutes, 08:00 to 20:00, every day. Needs the clock setting on.",
             toggle(t, "water-reminder", water, true, move |_, _, cx| {
                 let _ = me.update(cx, |v, cx| {
                     v.save(|s, _| s.water_reminder = !water);

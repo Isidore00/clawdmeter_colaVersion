@@ -94,6 +94,12 @@ int32_t sd_hal_read(const char* path, uint32_t offset, uint8_t* buf, uint32_t le
 // driver with no FAT in between, so "the slot works" can be told apart from
 // "the file system didn't mount". Frees the bus again afterwards.
 void sd_hal_raw(void) {
+    // A mounted card owns SPI3; let it go first (the next ask mounts again).
+    if (mounted) {
+        SD.end();
+        if (sd_spi) sd_spi->end();
+        mounted = false;
+    }
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = SPI3_HOST;
     host.max_freq_khz = 4000;

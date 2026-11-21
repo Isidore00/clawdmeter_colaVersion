@@ -58,7 +58,9 @@ pub fn system_locale() -> Option<String> {
     }
     if cfg!(target_os = "macos") {
         let langs = run("defaults", &["read", "-g", "AppleLanguages"])?;
-        return langs.split('"').nth(1).map(str::to_owned);
+        // The first list item, quoted or not: `(`, `    en,`, `    "zh-Hant-TW"`, `)`.
+        let first = langs.lines().map(str::trim).find(|l| !l.is_empty() && *l != "(")?;
+        return Some(first.trim_end_matches(',').trim_matches('"').to_owned());
     }
     ["LC_ALL", "LC_MESSAGES", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
 }
